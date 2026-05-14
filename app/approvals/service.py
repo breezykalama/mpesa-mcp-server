@@ -1,0 +1,88 @@
+"""Approval workflow service."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+from app.approvals.models import ApprovalRequest
+from app.approvals.repository import ApprovalRepositoryProtocol
+
+
+class ApprovalServiceResponse(BaseModel):
+    """Structured approval service response."""
+
+    status: str
+    allowed: bool
+    reason: str
+    approval: ApprovalRequest | None = None
+
+
+class ApprovalService:
+    """Coordinate approval request lifecycle."""
+
+    def __init__(self, *, approval_repository: ApprovalRepositoryProtocol) -> None:
+        self._approval_repository = approval_repository
+
+    def create_approval_request(
+        self,
+        *,
+        action: str,
+        payload: dict[str, Any],
+        reason: str,
+    ) -> ApprovalRequest:
+        """Create an approval request."""
+
+        return self._approval_repository.create(
+            action=action,
+            payload=payload,
+            reason=reason,
+        )
+
+    def approve_request(self, approval_id: str) -> ApprovalServiceResponse:
+        """Approve an approval request."""
+
+        approval = self._approval_repository.update_status(
+            approval_id=approval_id,
+            status="approved",
+        )
+        if approval is None:
+            return ApprovalServiceResponse(
+                status="not_found",
+                allowed=False,
+                reason="Approval request was not found.",
+            )
+
+        return ApprovalServiceResponse(
+            status="approved",
+            allowed=True,
+            reason="Approval request approved.",
+            approval=approval,
+        )
+
+    def reject_request(self, approval_id: str) -> ApprovalServiceResponse:
+        """Reject an approval request."""
+
+        approval = self._approval_repository.update_status(
+            approval_id=approval_id,
+            status="rejected",
+        )
+        if approval is None:
+            return ApprovalServiceResponse(
+                status="not_found",
+                allowed=False,
+                reason="Approval request was not found.",
+            )
+
+        return ApprovalServiceResponse(
+            status="rejected",
+            allowed=False,
+            reason="Approval request rejected.",
+            approval=approval,
+        )
+
+    def get_approval_request(self, approval_id: str) -> ApprovalRequest | None:
+        """Return an approval request by ID."""
+
+        return self._approval_repository.get(approval_id)

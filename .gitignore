@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Alembic
+alembic/versions/__pycache__/
+alembic/versions/*.pyc
+alembic/versions/*.pyo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+*.db
+*.sqlite
+*.sqlite3
+coverage.xml
+.coverage
+htmlcov/
