@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from app.bootstrap.container import AppContainer, create_app_container
+from app.logging.config import configure_logging
 from app.mcp.tools import (
     approve_payment_request_tool,
     check_transaction_status_tool,
@@ -31,6 +33,7 @@ REGISTERED_TOOL_NAMES = (
 
 ToolHandler = Callable[..., dict[str, Any]]
 McpDependencies = AppContainer
+logger = logging.getLogger(__name__)
 
 
 def create_mcp_dependencies(max_stk_amount: int = 10_000) -> McpDependencies:
@@ -134,6 +137,14 @@ def create_mcp_server(container: AppContainer | None = None) -> FastMCP:
     """Create the M-Pesa MCP server and register tools."""
 
     resolved_container = container or create_app_container()
+    configure_logging(
+        log_level=resolved_container.settings.log_level,
+        log_format=resolved_container.settings.log_format,
+    )
+    logger.info(
+        "MCP server created.",
+        extra={"event_type": "mcp_server_created"},
+    )
     server = FastMCP(MCP_SERVER_NAME)
 
     for tool_name, handler in create_tool_handlers(resolved_container).items():
@@ -153,4 +164,9 @@ def list_registered_tool_names(server: FastMCP) -> tuple[str, ...]:
 def run() -> None:
     """Run the MCP server."""
 
-    create_mcp_server().run()
+    server = create_mcp_server()
+    logger.info(
+        "MCP server starting.",
+        extra={"event_type": "mcp_server_starting"},
+    )
+    server.run()

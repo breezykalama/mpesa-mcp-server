@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import BaseModel
 
 from app.approvals.models import ApprovalRequest
 from app.approvals.repository import ApprovalRepositoryProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class ApprovalServiceResponse(BaseModel):
@@ -34,11 +37,20 @@ class ApprovalService:
     ) -> ApprovalRequest:
         """Create an approval request."""
 
-        return self._approval_repository.create(
+        approval = self._approval_repository.create(
             action=action,
             payload=payload,
             reason=reason,
         )
+        logger.info(
+            "Approval request created.",
+            extra={
+                "event_type": "approval_created",
+                "approval_id": approval.approval_id,
+                "status": approval.status,
+            },
+        )
+        return approval
 
     def approve_request(self, approval_id: str) -> ApprovalServiceResponse:
         """Approve an approval request."""
@@ -48,12 +60,28 @@ class ApprovalService:
             status="approved",
         )
         if approval is None:
+            logger.info(
+                "Approval request not found.",
+                extra={
+                    "event_type": "approval_update_failed",
+                    "approval_id": approval_id,
+                    "status": "not_found",
+                },
+            )
             return ApprovalServiceResponse(
                 status="not_found",
                 allowed=False,
                 reason="Approval request was not found.",
             )
 
+        logger.info(
+            "Approval request approved.",
+            extra={
+                "event_type": "approval_approved",
+                "approval_id": approval_id,
+                "status": approval.status,
+            },
+        )
         return ApprovalServiceResponse(
             status="approved",
             allowed=True,
@@ -69,12 +97,28 @@ class ApprovalService:
             status="rejected",
         )
         if approval is None:
+            logger.info(
+                "Approval request not found.",
+                extra={
+                    "event_type": "approval_update_failed",
+                    "approval_id": approval_id,
+                    "status": "not_found",
+                },
+            )
             return ApprovalServiceResponse(
                 status="not_found",
                 allowed=False,
                 reason="Approval request was not found.",
             )
 
+        logger.info(
+            "Approval request rejected.",
+            extra={
+                "event_type": "approval_rejected",
+                "approval_id": approval_id,
+                "status": approval.status,
+            },
+        )
         return ApprovalServiceResponse(
             status="rejected",
             allowed=False,

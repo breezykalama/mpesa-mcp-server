@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol, cast
 
 from redis import Redis
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,15 @@ class InMemoryRateLimiter:
             count = 0
 
         if count >= limit:
+            logger.warning(
+                "Rate limit exceeded.",
+                extra={
+                    "event_type": "rate_limit_exceeded",
+                    "limit": limit,
+                    "remaining": 0,
+                    "reset_after_seconds": max(0, int(window_seconds - elapsed)),
+                },
+            )
             return RateLimitDecision(
                 allowed=False,
                 key=key,
@@ -102,6 +114,15 @@ class RedisRateLimiter:
         reset_after_seconds = window_seconds if ttl < 0 else ttl
 
         if count > limit:
+            logger.warning(
+                "Rate limit exceeded.",
+                extra={
+                    "event_type": "rate_limit_exceeded",
+                    "limit": limit,
+                    "remaining": 0,
+                    "reset_after_seconds": reset_after_seconds,
+                },
+            )
             return RateLimitDecision(
                 allowed=False,
                 key=key,

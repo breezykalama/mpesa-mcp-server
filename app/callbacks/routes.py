@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from secrets import compare_digest
 from typing import Annotated, Any
 
@@ -11,6 +12,7 @@ from app.bootstrap.container import AppContainer, create_app_container
 from app.callbacks.handlers import CallbackProcessingResult, StkCallbackHandler
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _container = create_app_container()
 
@@ -41,9 +43,17 @@ def validate_callback_secret(
 
     expected_secret = container.settings.callback_shared_secret
     if expected_secret is None or expected_secret == "":
+        logger.info(
+            "Callback accepted without shared secret.",
+            extra={"event_type": "callback_accepted"},
+        )
         return
 
     if callback_secret is not None and compare_digest(callback_secret, expected_secret):
+        logger.info(
+            "Callback shared secret validated.",
+            extra={"event_type": "callback_accepted"},
+        )
         return
 
     reason = (
@@ -55,6 +65,10 @@ def validate_callback_secret(
         "stk_callback_rejected",
         {"reason": reason},
         actor="mpesa_callback",
+    )
+    logger.warning(
+        "Callback rejected.",
+        extra={"event_type": "callback_rejected", "status": "unauthorized"},
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

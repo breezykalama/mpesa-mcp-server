@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     rate_limit_max_approval_actions: int = 10
     rate_limit_max_status_checks: int = 30
     redis_url: str = "redis://localhost:6379/0"
+    log_level: str = "INFO"
+    log_format: str = "json"
 
     model_config = SettingsConfigDict(
         env_file=".env",

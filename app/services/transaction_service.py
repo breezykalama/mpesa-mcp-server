@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,6 +12,8 @@ from app.daraja.client import DarajaClientProtocol
 from app.observability.metrics import MetricsRecorder
 from app.safety.policy import PaymentActionRequest, PaymentPolicy
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class TransactionStatusServiceResponse(BaseModel):
@@ -53,6 +56,13 @@ class TransactionService:
         self._metrics_recorder.increment("tool_call_count")
 
         if not checkout_request_id:
+            logger.info(
+                "Transaction status check blocked.",
+                extra={
+                    "event_type": "transaction_status_blocked",
+                    "status": "blocked",
+                },
+            )
             return TransactionStatusServiceResponse(
                 status="blocked",
                 allowed=False,
@@ -64,6 +74,13 @@ class TransactionService:
         )
 
         if not policy_decision.allowed:
+            logger.info(
+                "Transaction status check blocked by policy.",
+                extra={
+                    "event_type": "transaction_status_blocked",
+                    "status": policy_decision.status,
+                },
+            )
             return TransactionStatusServiceResponse(
                 status=policy_decision.status,
                 allowed=False,
@@ -72,6 +89,10 @@ class TransactionService:
 
         local_transaction = self._transaction_repository.find_by_checkout_request_id(
             checkout_request_id
+        )
+        logger.info(
+            "Transaction status query started.",
+            extra={"event_type": "transaction_status_query_started"},
         )
         daraja_response = self._daraja_client.check_transaction_status(checkout_request_id)
 
@@ -86,6 +107,13 @@ class TransactionService:
             },
         )
 
+        logger.info(
+            "Transaction status checked.",
+            extra={
+                "event_type": "transaction_status_checked",
+                "status": daraja_response.status,
+            },
+        )
         return TransactionStatusServiceResponse(
             status=daraja_response.status,
             allowed=True,

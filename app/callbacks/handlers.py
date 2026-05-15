@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import BaseModel
@@ -9,6 +10,8 @@ from pydantic import BaseModel
 from app.audit.logger import AuditLoggerProtocol
 from app.observability.metrics import MetricsRecorder
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class CallbackProcessingResult(BaseModel):
@@ -44,10 +47,18 @@ class StkCallbackHandler:
         """Process a raw STK callback payload."""
 
         self._metrics_recorder.increment("callback_received_count")
+        logger.info(
+            "STK callback received.",
+            extra={"event_type": "callback_received"},
+        )
 
         callback = self._extract_callback(payload)
         checkout_request_id = self._get_string(callback, "CheckoutRequestID")
         if checkout_request_id is None:
+            logger.info(
+                "STK callback rejected.",
+                extra={"event_type": "callback_rejected", "status": "invalid"},
+            )
             return CallbackProcessingResult(
                 status="invalid",
                 success=False,
@@ -80,6 +91,15 @@ class StkCallbackHandler:
             transaction_id=self._transaction_id(updated_transaction),
         )
         self._log_callback(result)
+        logger.info(
+            "STK callback processed.",
+            extra={
+                "event_type": "callback_accepted",
+                "status": result.status,
+                "transaction_id": result.transaction_id,
+                "amount": result.amount,
+            },
+        )
         return result
 
     def _extract_callback(self, payload: dict[str, Any]) -> dict[str, Any]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any
 
 from pydantic import BaseModel
@@ -14,6 +15,8 @@ from app.daraja.client import DarajaClientProtocol, StkPushResponse
 from app.observability.metrics import MetricsRecorder
 from app.safety.policy import PaymentActionRequest, PaymentPolicy
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentResponse(BaseModel):
@@ -83,6 +86,10 @@ class PaymentService:
 
         if policy_decision.requires_approval:
             if phone_number is None or amount is None:
+                logger.info(
+                    "Payment blocked.",
+                    extra={"event_type": "payment_blocked", "status": "blocked"},
+                )
                 return PaymentResponse(
                     status="blocked",
                     allowed=False,
@@ -106,6 +113,15 @@ class PaymentService:
                 },
                 reason=policy_decision.reason,
             )
+            logger.info(
+                "Payment requires approval.",
+                extra={
+                    "event_type": "approval_created",
+                    "approval_id": approval.approval_id,
+                    "amount": amount,
+                    "status": policy_decision.status,
+                },
+            )
             self._metrics_recorder.increment("approval_required_count")
             return PaymentResponse(
                 status=policy_decision.status,
@@ -117,6 +133,13 @@ class PaymentService:
             )
 
         if not policy_decision.allowed:
+            logger.info(
+                "Payment blocked by policy.",
+                extra={
+                    "event_type": "payment_blocked",
+                    "status": policy_decision.status,
+                },
+            )
             return PaymentResponse(
                 status=policy_decision.status,
                 allowed=False,
@@ -124,6 +147,10 @@ class PaymentService:
             )
 
         if phone_number is None or amount is None:
+            logger.info(
+                "Payment blocked.",
+                extra={"event_type": "payment_blocked", "status": "blocked"},
+            )
             return PaymentResponse(
                 status="blocked",
                 allowed=False,
@@ -150,6 +177,14 @@ class PaymentService:
 
         approval = self._approval_service.get_approval_request(approval_id)
         if approval is None:
+            logger.info(
+                "Approval execution failed; request not found.",
+                extra={
+                    "event_type": "approval_execution_blocked",
+                    "approval_id": approval_id,
+                    "status": "not_found",
+                },
+            )
             return ApprovalExecutionResponse(
                 status="not_found",
                 allowed=False,
@@ -157,6 +192,14 @@ class PaymentService:
             )
 
         if approval.status != "pending":
+            logger.info(
+                "Approval execution blocked.",
+                extra={
+                    "event_type": "approval_execution_blocked",
+                    "approval_id": approval_id,
+                    "status": approval.status,
+                },
+            )
             return ApprovalExecutionResponse(
                 status="blocked",
                 allowed=False,
@@ -174,6 +217,14 @@ class PaymentService:
             )
 
         payment_response = self._execute_approved_stk_push(approved_approval.payload)
+        logger.info(
+            "Approval executed.",
+            extra={
+                "event_type": "approval_executed",
+                "approval_id": approval_id,
+                "status": payment_response.status,
+            },
+        )
 
         return ApprovalExecutionResponse(
             status=approval_response.status,
@@ -197,6 +248,10 @@ class PaymentService:
             or not isinstance(description, str)
             or not isinstance(idempotency_key, str)
         ):
+            logger.info(
+                "Approval payload blocked.",
+                extra={"event_type": "approval_execution_blocked", "status": "blocked"},
+            )
             return PaymentResponse(
                 status="blocked",
                 allowed=False,
@@ -224,9 +279,21 @@ class PaymentService:
             idempotency_key
         )
         if existing_transaction is not None:
+            logger.info(
+                "Existing payment returned for idempotency key.",
+                extra={
+                    "event_type": "payment_idempotency_hit",
+                    "transaction_id": existing_transaction.transaction_id,
+                    "status": existing_transaction.status,
+                },
+            )
             return self._response_from_existing_transaction(existing_transaction)
 
         try:
+            logger.info(
+                "Payment initiation started.",
+                extra={"event_type": "payment_initiation_started", "amount": amount},
+            )
             daraja_response = self._daraja_client.initiate_stk_push(
                 phone_number=phone_number,
                 amount=amount,
@@ -234,6 +301,10 @@ class PaymentService:
                 description=description,
             )
         except Exception as exc:
+            logger.exception(
+                "Payment initiation failed.",
+                extra={"event_type": "payment_initiation_failed", "status": "failed"},
+            )
             self._metrics_recorder.increment("failed_payment_count")
             return PaymentResponse(
                 status="failed",
@@ -252,6 +323,15 @@ class PaymentService:
         )
 
         self._log_success(transaction, daraja_response)
+        logger.info(
+            "Payment initiated.",
+            extra={
+                "event_type": "payment_initiated",
+                "transaction_id": transaction.transaction_id,
+                "amount": amount,
+                "status": transaction.status,
+            },
+        )
         self._metrics_recorder.increment("successful_payment_count")
 
         return PaymentResponse(

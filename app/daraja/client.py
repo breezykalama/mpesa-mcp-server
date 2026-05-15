@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
@@ -11,6 +12,8 @@ import httpx
 from pydantic import BaseModel
 
 from app.config import Settings
+
+logger = logging.getLogger(__name__)
 
 SAFARICOM_SANDBOX_BASE_URL = "https://sandbox.safaricom.co.ke"
 SAFARICOM_PRODUCTION_BASE_URL = "https://api.safaricom.co.ke"
@@ -106,6 +109,10 @@ class RealDarajaClient:
     ) -> StkPushResponse:
         """Initiate a Safaricom Daraja sandbox STK push request."""
 
+        logger.info(
+            "Daraja STK push request started.",
+            extra={"event_type": "daraja_request_started", "amount": amount},
+        )
         token = self._get_oauth_token()
         timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         shortcode = self._required_setting("daraja_shortcode")
@@ -129,6 +136,13 @@ class RealDarajaClient:
         )
         response.raise_for_status()
         payload = response.json()
+        logger.info(
+            "Daraja STK push request completed.",
+            extra={
+                "event_type": "daraja_request_completed",
+                "status": str(payload.get("ResponseCode", "")),
+            },
+        )
 
         return StkPushResponse(
             checkout_request_id=str(payload.get("CheckoutRequestID", "")),
@@ -143,6 +157,10 @@ class RealDarajaClient:
         payload = self._transaction_status_payload(checkout_request_id)
 
         try:
+            logger.info(
+                "Daraja transaction status request started.",
+                extra={"event_type": "daraja_transaction_status_query"},
+            )
             token = self._get_oauth_token()
             response = self._http_client.post(
                 f"{self._base_url}{TRANSACTION_STATUS_PATH}",
@@ -152,16 +170,28 @@ class RealDarajaClient:
             response.raise_for_status()
             response_payload = response.json()
         except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Daraja transaction status request failed.",
+                extra={"event_type": "daraja_request_failed", "status": "failed"},
+            )
             return self._failed_transaction_status_response(
                 checkout_request_id,
                 self._http_error_description(exc),
             )
         except httpx.HTTPError as exc:
+            logger.warning(
+                "Daraja transaction status request failed.",
+                extra={"event_type": "daraja_request_failed", "status": "failed"},
+            )
             return self._failed_transaction_status_response(
                 checkout_request_id,
                 f"Daraja transaction status request failed: {exc}",
             )
         except ValueError:
+            logger.warning(
+                "Daraja transaction status response was invalid JSON.",
+                extra={"event_type": "daraja_request_failed", "status": "failed"},
+            )
             return self._failed_transaction_status_response(
                 checkout_request_id,
                 "Daraja transaction status response was not valid JSON.",
@@ -174,6 +204,13 @@ class RealDarajaClient:
             or "Daraja transaction status query failed."
         )
 
+        logger.info(
+            "Daraja transaction status request completed.",
+            extra={
+                "event_type": "daraja_transaction_status_query",
+                "status": "query_accepted" if response_code == "0" else "failed",
+            },
+        )
         return TransactionStatusResponse(
             checkout_request_id=checkout_request_id,
             result_code=response_code,
@@ -182,6 +219,10 @@ class RealDarajaClient:
         )
 
     def _get_oauth_token(self) -> str:
+        logger.info(
+            "Daraja OAuth token request started.",
+            extra={"event_type": "daraja_request_started"},
+        )
         response = self._http_client.get(
             f"{self._base_url}{OAUTH_TOKEN_PATH}",
             params={"grant_type": "client_credentials"},
@@ -193,7 +234,15 @@ class RealDarajaClient:
         response.raise_for_status()
         access_token = response.json().get("access_token")
         if not isinstance(access_token, str) or access_token == "":
+            logger.warning(
+                "Daraja OAuth response did not include token.",
+                extra={"event_type": "daraja_request_failed", "status": "failed"},
+            )
             raise ValueError("Daraja OAuth response did not include an access token.")
+        logger.info(
+            "Daraja OAuth token request completed.",
+            extra={"event_type": "daraja_request_completed"},
+        )
         return access_token
 
     def _build_stk_password(self, timestamp: str) -> str:

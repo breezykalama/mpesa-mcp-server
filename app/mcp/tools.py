@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
 
 from pydantic import ValidationError
@@ -23,6 +24,8 @@ from app.services.payment_service import ApprovalExecutionResponse, PaymentRespo
 from app.services.receipt_service import ReceiptServiceResponse
 from app.services.transaction_service import TransactionStatusServiceResponse
 from app.storage.repositories import PendingTransaction
+
+logger = logging.getLogger(__name__)
 
 
 class InitiateStkPushServiceProtocol(Protocol):
@@ -95,6 +98,7 @@ def initiate_stk_push_tool(
     try:
         tool_input = _validate_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("initiate_stk_push", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -110,8 +114,10 @@ def initiate_stk_push_tool(
         window_seconds=rate_limit_window_seconds,
     )
     if rate_limit_response is not None:
+        _log_tool_event("initiate_stk_push", "mcp_tool_rate_limited", status="rate_limited")
         return rate_limit_response
 
+    _log_tool_event("initiate_stk_push", "mcp_tool_delegated")
     payment_response = payment_service.initiate_stk_push(
         phone_number=tool_input.phone_number,
         amount=tool_input.amount,
@@ -146,6 +152,7 @@ def check_transaction_status_tool(
     try:
         tool_input = _validate_transaction_status_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("check_transaction_status", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -161,8 +168,14 @@ def check_transaction_status_tool(
         window_seconds=rate_limit_window_seconds,
     )
     if rate_limit_response is not None:
+        _log_tool_event(
+            "check_transaction_status",
+            "mcp_tool_rate_limited",
+            status="rate_limited",
+        )
         return rate_limit_response
 
+    _log_tool_event("check_transaction_status", "mcp_tool_delegated")
     transaction_response = transaction_service.check_transaction_status(
         tool_input.checkout_request_id
     )
@@ -188,6 +201,7 @@ def generate_receipt_tool(
     try:
         tool_input = _validate_generate_receipt_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("generate_receipt", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -195,6 +209,7 @@ def generate_receipt_tool(
             errors=[error["msg"] for error in exc.errors()],
         )
 
+    _log_tool_event("generate_receipt", "mcp_tool_delegated")
     receipt_response = receipt_service.generate_receipt(tool_input.checkout_request_id)
 
     return McpToolResponse(
@@ -217,6 +232,7 @@ def get_today_summary_tool(
     try:
         _validate_today_summary_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("get_today_summary", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -224,6 +240,7 @@ def get_today_summary_tool(
             errors=[error["msg"] for error in exc.errors()],
         )
 
+    _log_tool_event("get_today_summary", "mcp_tool_delegated")
     summary = analytics_service.get_today_summary()
 
     return McpToolResponse(
@@ -243,6 +260,7 @@ def get_failed_transactions_tool(
     try:
         _validate_failed_transactions_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("get_failed_transactions", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -250,6 +268,7 @@ def get_failed_transactions_tool(
             errors=[error["msg"] for error in exc.errors()],
         )
 
+    _log_tool_event("get_failed_transactions", "mcp_tool_delegated")
     failed_transactions = analytics_service.get_failed_transactions()
 
     return McpToolResponse(
@@ -278,6 +297,7 @@ def approve_payment_request_tool(
     try:
         tool_input = _validate_approve_payment_request_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("approve_payment_request", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -293,8 +313,14 @@ def approve_payment_request_tool(
         window_seconds=rate_limit_window_seconds,
     )
     if rate_limit_response is not None:
+        _log_tool_event(
+            "approve_payment_request",
+            "mcp_tool_rate_limited",
+            status="rate_limited",
+        )
         return rate_limit_response
 
+    _log_tool_event("approve_payment_request", "mcp_tool_delegated")
     execution_response = payment_service.execute_approved_payment(tool_input.approval_id)
     return _approval_execution_response_to_mcp_response(execution_response)
 
@@ -313,6 +339,7 @@ def reject_payment_request_tool(
     try:
         tool_input = _validate_reject_payment_request_input(input_data)
     except ValidationError as exc:
+        _log_tool_event("reject_payment_request", "mcp_tool_invalid_input")
         return McpToolResponse(
             status="invalid_input",
             allowed=False,
@@ -328,8 +355,14 @@ def reject_payment_request_tool(
         window_seconds=rate_limit_window_seconds,
     )
     if rate_limit_response is not None:
+        _log_tool_event(
+            "reject_payment_request",
+            "mcp_tool_rate_limited",
+            status="rate_limited",
+        )
         return rate_limit_response
 
+    _log_tool_event("reject_payment_request", "mcp_tool_delegated")
     approval_response = approval_service.reject_request(tool_input.approval_id)
     return _approval_response_to_mcp_response(approval_response)
 
@@ -452,3 +485,13 @@ def _check_rate_limit(
             "reset_after_seconds": decision.reset_after_seconds,
         },
     )
+
+
+def _log_tool_event(tool_name: str, event_type: str, status: str | None = None) -> None:
+    extra: dict[str, str] = {
+        "event_type": event_type,
+        "tool_name": tool_name,
+    }
+    if status is not None:
+        extra["status"] = status
+    logger.info("MCP tool event.", extra=extra)
