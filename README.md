@@ -203,6 +203,12 @@ uv run mypy app tests scripts
 python -m compileall app tests scripts
 ```
 
+## Continuous Integration
+
+GitHub Actions runs on every push and pull request. The CI workflow uses Python 3.12 and `uv` to install dependencies, compile modules, run the pytest suite, run Ruff, and run mypy.
+
+The workflow does not start PostgreSQL, Redis, or call Daraja. Tests use in-memory adapters and mocked HTTP clients, so CI does not require production credentials or repository secrets.
+
 ## Running The MCP Server
 
 ```bash
