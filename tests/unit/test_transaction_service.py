@@ -36,6 +36,9 @@ def test_status_check_succeeds() -> None:
     assert response.status == "completed"
     assert response.allowed is True
     assert response.checkout_request_id == "ws_CO_123"
+    assert response.provider == "daraja"
+    assert response.rail == "mpesa"
+    assert response.provider_transaction_id == "ws_CO_123"
     assert response.result_code == "0"
 
 

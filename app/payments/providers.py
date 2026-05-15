@@ -12,8 +12,12 @@ from app.daraja.client import DarajaClientProtocol
 class PaymentInitiationResponse(BaseModel):
     """Generic payment initiation response."""
 
+    provider: str = "daraja"
+    rail: str = "mpesa"
     checkout_request_id: str
     merchant_request_id: str
+    provider_transaction_id: str | None = None
+    provider_reference: str | None = None
     response_code: str
     response_description: str
 
@@ -21,7 +25,11 @@ class PaymentInitiationResponse(BaseModel):
 class PaymentStatusResponse(BaseModel):
     """Generic payment status response."""
 
+    provider: str = "daraja"
+    rail: str = "mpesa"
     checkout_request_id: str
+    provider_transaction_id: str | None = None
+    provider_reference: str | None = None
     result_code: str
     result_description: str
     status: str
@@ -67,8 +75,12 @@ class DarajaPaymentProvider:
             description=description,
         )
         return PaymentInitiationResponse(
+            provider="daraja",
+            rail="mpesa",
             checkout_request_id=response.checkout_request_id,
             merchant_request_id=response.merchant_request_id,
+            provider_transaction_id=response.checkout_request_id,
+            provider_reference=response.merchant_request_id,
             response_code=response.response_code,
             response_description=response.response_description,
         )
@@ -78,7 +90,11 @@ class DarajaPaymentProvider:
 
         response = self._daraja_client.check_transaction_status(transaction_reference)
         return PaymentStatusResponse(
+            provider="daraja",
+            rail="mpesa",
             checkout_request_id=response.checkout_request_id,
+            provider_transaction_id=response.checkout_request_id,
+            provider_reference=transaction_reference,
             result_code=response.result_code,
             result_description=response.result_description,
             status=response.status,

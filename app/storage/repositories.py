@@ -18,6 +18,10 @@ class PendingTransaction(BaseModel):
 
     transaction_id: str
     idempotency_key: str | None = None
+    provider: str = "daraja"
+    rail: str = "mpesa"
+    provider_transaction_id: str | None = None
+    provider_reference: str | None = None
     phone_number: str
     amount: int
     account_reference: str
@@ -45,6 +49,10 @@ class TransactionRepositoryProtocol(Protocol):
         checkout_request_id: str,
         merchant_request_id: str,
         idempotency_key: str | None = None,
+        provider: str = "daraja",
+        rail: str = "mpesa",
+        provider_transaction_id: str | None = None,
+        provider_reference: str | None = None,
     ) -> PendingTransaction:
         """Save and return a pending transaction."""
 
@@ -94,12 +102,20 @@ class InMemoryTransactionRepository:
         checkout_request_id: str,
         merchant_request_id: str,
         idempotency_key: str | None = None,
+        provider: str = "daraja",
+        rail: str = "mpesa",
+        provider_transaction_id: str | None = None,
+        provider_reference: str | None = None,
     ) -> PendingTransaction:
         """Save and return a pending transaction."""
 
         transaction = PendingTransaction(
             transaction_id=str(uuid4()),
             idempotency_key=idempotency_key,
+            provider=provider,
+            rail=rail,
+            provider_transaction_id=provider_transaction_id,
+            provider_reference=provider_reference,
             phone_number=phone_number,
             amount=amount,
             account_reference=account_reference,
@@ -206,6 +222,10 @@ class PostgresTransactionRepository:
         checkout_request_id: str,
         merchant_request_id: str,
         idempotency_key: str | None = None,
+        provider: str = "daraja",
+        rail: str = "mpesa",
+        provider_transaction_id: str | None = None,
+        provider_reference: str | None = None,
     ) -> PendingTransaction:
         """Save and return a pending transaction."""
 
@@ -213,6 +233,10 @@ class PostgresTransactionRepository:
         model = TransactionModel(
             transaction_id=str(uuid4()),
             idempotency_key=idempotency_key,
+            provider=provider,
+            rail=rail,
+            provider_transaction_id=provider_transaction_id,
+            provider_reference=provider_reference,
             phone_number=phone_number,
             amount=amount,
             account_reference=account_reference,
@@ -321,6 +345,10 @@ class PostgresTransactionRepository:
         return PendingTransaction(
             transaction_id=model.transaction_id,
             idempotency_key=model.idempotency_key,
+            provider=model.provider,
+            rail=model.rail,
+            provider_transaction_id=model.provider_transaction_id,
+            provider_reference=model.provider_reference,
             phone_number=model.phone_number,
             amount=model.amount,
             account_reference=model.account_reference,

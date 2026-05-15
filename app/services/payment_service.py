@@ -320,6 +320,10 @@ class PaymentService:
             checkout_request_id=provider_response.checkout_request_id,
             merchant_request_id=provider_response.merchant_request_id,
             idempotency_key=idempotency_key,
+            provider=provider_response.provider,
+            rail=provider_response.rail,
+            provider_transaction_id=provider_response.provider_transaction_id,
+            provider_reference=provider_response.provider_reference,
         )
 
         self._log_success(transaction, provider_response)

@@ -20,6 +20,18 @@ class TransactionModel(Base):
 
     transaction_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="daraja", index=True)
+    rail: Mapped[str] = mapped_column(String(64), default="mpesa", index=True)
+    provider_transaction_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+    provider_reference: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
     checkout_request_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     merchant_request_id: Mapped[str] = mapped_column(String(128), index=True)
     phone_number: Mapped[str] = mapped_column(String(32))

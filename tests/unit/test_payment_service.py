@@ -119,6 +119,10 @@ def test_successful_mocked_stk_push() -> None:
     transaction = repository.get_transaction(response.transaction_id)
     assert transaction is not None
     assert transaction.amount == 1_000
+    assert transaction.provider == "daraja"
+    assert transaction.rail == "mpesa"
+    assert transaction.provider_transaction_id == response.checkout_request_id
+    assert transaction.provider_reference == response.merchant_request_id
     assert transaction.phone_number == "254700000000"
 
 
@@ -301,6 +305,24 @@ def test_repository_finds_transaction_by_idempotency_key() -> None:
 
     assert found is not None
     assert found.transaction_id == transaction.transaction_id
+
+
+def test_in_memory_repository_defaults_provider_fields() -> None:
+    repository = InMemoryTransactionRepository()
+
+    transaction = repository.save_pending_transaction(
+        phone_number="254700000000",
+        amount=1_000,
+        account_reference="INV-DEFAULT",
+        description="Invoice payment",
+        checkout_request_id="ws_CO_DEFAULT",
+        merchant_request_id="merchant_default",
+    )
+
+    assert transaction.provider == "daraja"
+    assert transaction.rail == "mpesa"
+    assert transaction.provider_transaction_id is None
+    assert transaction.provider_reference is None
 
 
 def test_above_limit_stk_creates_approval_request() -> None:

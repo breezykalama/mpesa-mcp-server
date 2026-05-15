@@ -23,6 +23,10 @@ class TransactionStatusServiceResponse(BaseModel):
     allowed: bool
     reason: str
     checkout_request_id: str | None = None
+    provider: str | None = None
+    rail: str | None = None
+    provider_transaction_id: str | None = None
+    provider_reference: str | None = None
     result_code: str | None = None
     result_description: str | None = None
     local_transaction: dict[str, Any] | None = None
@@ -119,6 +123,10 @@ class TransactionService:
             allowed=True,
             reason=provider_response.result_description,
             checkout_request_id=provider_response.checkout_request_id,
+            provider=provider_response.provider,
+            rail=provider_response.rail,
+            provider_transaction_id=provider_response.provider_transaction_id,
+            provider_reference=provider_response.provider_reference,
             result_code=provider_response.result_code,
             result_description=provider_response.result_description,
             local_transaction=self._dump_local_transaction(local_transaction),

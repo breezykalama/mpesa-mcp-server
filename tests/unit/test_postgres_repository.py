@@ -42,8 +42,35 @@ def test_postgres_repository_saves_and_finds_pending_transaction() -> None:
     assert found is not None
     assert found.transaction_id == transaction.transaction_id
     assert found.status == "pending"
+    assert found.provider == "daraja"
+    assert found.rail == "mpesa"
     assert found_by_idempotency_key is not None
     assert found_by_idempotency_key.transaction_id == transaction.transaction_id
+
+
+def test_postgres_repository_stores_provider_fields() -> None:
+    repository = build_repository()
+
+    transaction = repository.save_pending_transaction(
+        phone_number="254700000000",
+        amount=1_000,
+        account_reference="INV-001",
+        description="Invoice payment",
+        checkout_request_id="ws_CO_PROVIDER",
+        merchant_request_id="mock_provider",
+        provider="daraja",
+        rail="mpesa",
+        provider_transaction_id="ws_CO_PROVIDER",
+        provider_reference="mock_provider",
+    )
+
+    found = repository.get_transaction(transaction.transaction_id)
+
+    assert found is not None
+    assert found.provider == "daraja"
+    assert found.rail == "mpesa"
+    assert found.provider_transaction_id == "ws_CO_PROVIDER"
+    assert found.provider_reference == "mock_provider"
 
 
 def test_postgres_repository_updates_transaction_status() -> None:
