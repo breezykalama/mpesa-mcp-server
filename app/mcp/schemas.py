@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InitiateStkPushInput(BaseModel):
@@ -47,6 +47,12 @@ class RejectPaymentRequestInput(BaseModel):
     """Input schema for the reject_payment_request MCP tool."""
 
     approval_id: str
+
+
+class RunReconciliationInput(BaseModel):
+    """Input schema for the run_reconciliation MCP tool."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class McpToolResponse(BaseModel):

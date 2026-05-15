@@ -18,6 +18,7 @@ from app.mcp.tools import (
     get_today_summary_tool,
     initiate_stk_push_tool,
     reject_payment_request_tool,
+    run_reconciliation_tool,
 )
 
 MCP_SERVER_NAME = "mpesa-mcp-server"
@@ -29,6 +30,7 @@ REGISTERED_TOOL_NAMES = (
     "get_failed_transactions",
     "approve_payment_request",
     "reject_payment_request",
+    "run_reconciliation",
 )
 
 ToolHandler = Callable[..., dict[str, Any]]
@@ -135,6 +137,14 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         )
         return response.model_dump(mode="json")
 
+    def run_reconciliation() -> dict[str, Any]:
+        response = run_reconciliation_tool(
+            {},
+            container.reconciliation_service,
+            tool_policy=container.tool_policy,
+        )
+        return response.model_dump(mode="json")
+
     return {
         "initiate_stk_push": initiate_stk_push,
         "check_transaction_status": check_transaction_status,
@@ -143,6 +153,7 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         "get_failed_transactions": get_failed_transactions,
         "approve_payment_request": approve_payment_request,
         "reject_payment_request": reject_payment_request,
+        "run_reconciliation": run_reconciliation,
     }
 
 

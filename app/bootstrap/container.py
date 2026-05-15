@@ -25,6 +25,7 @@ from app.payments.providers import DarajaPaymentProvider, PaymentProviderProtoco
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RateLimiterProtocol, RedisRateLimiter
 from app.receipts.generator import ReceiptGenerator
+from app.reconciliation.service import ReconciliationService
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentService
 from app.services.receipt_service import ReceiptService
@@ -61,6 +62,7 @@ class AppContainer:
     transaction_service: TransactionService
     receipt_service: ReceiptService
     analytics_service: AnalyticsService
+    reconciliation_service: ReconciliationService
 
     @classmethod
     def mock(cls, settings: Settings | None = None) -> AppContainer:
@@ -122,6 +124,11 @@ class AppContainer:
                 metrics_recorder=metrics_recorder,
             ),
             analytics_service=AnalyticsService(transaction_repository=transaction_repository),
+            reconciliation_service=ReconciliationService(
+                transaction_repository=transaction_repository,
+                payment_provider=payment_provider,
+                stale_pending_minutes=resolved_settings.reconciliation_stale_pending_minutes,
+            ),
         )
 
     @classmethod

@@ -20,10 +20,12 @@ from app.mcp.schemas import (
     InitiateStkPushInput,
     McpToolResponse,
     RejectPaymentRequestInput,
+    RunReconciliationInput,
 )
 from app.observability.tracing import correlation_context
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import RateLimiterProtocol
+from app.reconciliation.service import ReconciliationSummary
 from app.services.payment_service import ApprovalExecutionResponse, PaymentResponse
 from app.services.receipt_service import ReceiptServiceResponse
 from app.services.transaction_service import TransactionStatusServiceResponse
@@ -99,6 +101,13 @@ class ApprovalRejectionServiceProtocol(Protocol):
 
     def reject_request(self, approval_id: str) -> ApprovalServiceResponse:
         """Reject an approval request."""
+
+
+class ReconciliationServiceProtocol(Protocol):
+    """Service contract required by reconciliation MCP tools."""
+
+    def run_reconciliation(self) -> ReconciliationSummary:
+        """Run reconciliation."""
 
 
 @with_correlation_context
@@ -429,6 +438,40 @@ def reject_payment_request_tool(
     return _approval_response_to_mcp_response(approval_response)
 
 
+@with_correlation_context
+def run_reconciliation_tool(
+    input_data: RunReconciliationInput | dict[str, Any],
+    reconciliation_service: ReconciliationServiceProtocol,
+    *,
+    tool_policy: ToolPolicyEngine | None = None,
+) -> McpToolResponse:
+    """Validate MCP input and delegate reconciliation to the service."""
+
+    policy_response = _check_tool_policy("run_reconciliation", tool_policy)
+    if policy_response is not None:
+        return policy_response
+
+    try:
+        _validate_run_reconciliation_input(input_data)
+    except ValidationError as exc:
+        _log_tool_event("run_reconciliation", "mcp_tool_invalid_input")
+        return McpToolResponse(
+            status="invalid_input",
+            allowed=False,
+            reason="Invalid run_reconciliation input.",
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    _log_tool_event("run_reconciliation", "mcp_tool_delegated")
+    summary = reconciliation_service.run_reconciliation()
+    return McpToolResponse(
+        status=summary.status,
+        allowed=True,
+        reason="Reconciliation completed successfully.",
+        data={"summary": summary.model_dump(mode="json")},
+    )
+
+
 def _validate_input(input_data: InitiateStkPushInput | dict[str, Any]) -> InitiateStkPushInput:
     if isinstance(input_data, InitiateStkPushInput):
         return input_data
@@ -488,6 +531,15 @@ def _validate_reject_payment_request_input(
         return input_data
 
     return RejectPaymentRequestInput.model_validate(input_data)
+
+
+def _validate_run_reconciliation_input(
+    input_data: RunReconciliationInput | dict[str, Any],
+) -> RunReconciliationInput:
+    if isinstance(input_data, RunReconciliationInput):
+        return input_data
+
+    return RunReconciliationInput.model_validate(input_data)
 
 
 def _approval_response_to_mcp_response(response: ApprovalServiceResponse) -> McpToolResponse:

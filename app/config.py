@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     enabled_mcp_tools: str = ""
     blocked_mcp_tools: str = ""
     approval_required_mcp_tools: str = ""
+    reconciliation_stale_pending_minutes: int = 15
     redis_url: str = "redis://localhost:6379/0"
     log_level: str = "INFO"
     log_format: str = "json"

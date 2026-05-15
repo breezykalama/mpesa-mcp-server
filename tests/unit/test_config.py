@@ -8,6 +8,7 @@ def test_default_max_stk_amount() -> None:
     settings = Settings(database_url="postgresql+asyncpg://user:pass@localhost:5432/test")
 
     assert settings.max_stk_amount == 10_000
+    assert settings.reconciliation_stale_pending_minutes == 15
 
 
 def test_env_override_for_max_stk_amount(monkeypatch: MonkeyPatch) -> None:
