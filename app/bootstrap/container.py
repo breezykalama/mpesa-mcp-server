@@ -13,6 +13,11 @@ from app.audit.repository import (
     InMemoryAuditRepository,
     PostgresAuditRepository,
 )
+from app.callbacks.replay import (
+    InMemoryReplayProtection,
+    RedisReplayProtection,
+    ReplayProtectionProtocol,
+)
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
@@ -45,6 +50,7 @@ class AppContainer:
     audit_logger: InMemoryAuditLogger
     metrics_recorder: InMemoryMetricsRecorder
     rate_limiter: RateLimiterProtocol
+    replay_protection: ReplayProtectionProtocol
     receipt_generator: ReceiptGenerator
     payment_service: PaymentService
     approval_service: ApprovalService
@@ -67,6 +73,7 @@ class AppContainer:
         audit_logger = InMemoryAuditLogger(repository=audit_repository)
         metrics_recorder = InMemoryMetricsRecorder()
         rate_limiter = cls._create_rate_limiter(resolved_settings)
+        replay_protection = cls._create_replay_protection(resolved_settings)
         daraja_client = cls._create_daraja_client(resolved_settings)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
         receipt_generator = ReceiptGenerator()
@@ -82,6 +89,7 @@ class AppContainer:
             audit_logger=audit_logger,
             metrics_recorder=metrics_recorder,
             rate_limiter=rate_limiter,
+            replay_protection=replay_protection,
             receipt_generator=receipt_generator,
             approval_service=approval_service,
             payment_service=PaymentService(
@@ -133,6 +141,16 @@ class AppContainer:
             return RedisRateLimiter(redis_url=settings.redis_url)
 
         raise ValueError("RATE_LIMIT_MODE must be one of: memory, redis.")
+
+    @staticmethod
+    def _create_replay_protection(settings: Settings) -> ReplayProtectionProtocol:
+        if settings.callback_replay_mode == "memory":
+            return InMemoryReplayProtection()
+
+        if settings.callback_replay_mode == "redis":
+            return RedisReplayProtection(redis_url=settings.redis_url)
+
+        raise ValueError("CALLBACK_REPLAY_MODE must be one of: memory, redis.")
 
     @staticmethod
     def _create_session_factory(settings: Settings) -> SessionFactory | None:

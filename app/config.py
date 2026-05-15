@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     daraja_transaction_status_remarks: str = "Transaction status query"
     daraja_transaction_status_occasion: str = "Mpesa MCP status check"
     callback_shared_secret: str | None = None
+    callback_replay_protection_enabled: bool = True
+    callback_replay_window_seconds: int = 600
+    callback_replay_mode: str = "memory"
     max_stk_amount: int = 10000
     rate_limit_enabled: bool = True
     rate_limit_mode: str = "memory"

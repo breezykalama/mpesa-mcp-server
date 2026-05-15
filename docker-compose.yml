@@ -13,6 +13,7 @@ services:
       STORAGE_MODE: postgres
       REDIS_URL: redis://redis:6379/0
       RATE_LIMIT_MODE: redis
+      CALLBACK_REPLAY_MODE: redis
       DARAJA_MODE: mock
       LOG_LEVEL: INFO
       LOG_FORMAT: json

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.audit.repository import InMemoryAuditRepository, PostgresAuditRepository
 from app.bootstrap.container import DEFAULT_MOCK_DATABASE_URL, AppContainer
+from app.callbacks.replay import InMemoryReplayProtection, RedisReplayProtection
 from app.config import Settings
 from app.daraja.client import MockDarajaClient, RealDarajaClient
 from app.mcp.server import create_mcp_server, create_tool_handlers, list_registered_tool_names
@@ -22,6 +23,7 @@ def test_container_builds_successfully() -> None:
     assert isinstance(container.transaction_repository, InMemoryTransactionRepository)
     assert isinstance(container.audit_repository, InMemoryAuditRepository)
     assert isinstance(container.rate_limiter, InMemoryRateLimiter)
+    assert isinstance(container.replay_protection, InMemoryReplayProtection)
 
 
 def test_services_are_correctly_wired() -> None:
@@ -105,3 +107,15 @@ def test_container_selects_redis_rate_limiter_for_redis_mode() -> None:
     )
 
     assert isinstance(container.rate_limiter, RedisRateLimiter)
+
+
+def test_container_selects_redis_replay_protection_for_redis_mode() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            callback_replay_mode="redis",
+            redis_url="redis://localhost:6379/1",
+        )
+    )
+
+    assert isinstance(container.replay_protection, RedisReplayProtection)
