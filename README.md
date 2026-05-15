@@ -1,8 +1,35 @@
 # M-Pesa MCP Server MVP
 
+[![CI](https://github.com/breezykalama/mpesa-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/breezykalama/mpesa-mcp-server/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-ready-009688)
+![MCP](https://img.shields.io/badge/MCP-server-6f42c1)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ed)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
+
 An experimental Model Context Protocol (MCP) server that lets an AI agent interact with a guarded M-Pesa workflow through typed tools.
 
 The MVP demonstrates how an agent can request payment actions, check transaction state, handle STK callbacks, generate receipts, and ask simple revenue questions while the actual payment logic remains isolated behind service interfaces.
+
+## Current Status
+
+- Mock mode complete for safe local demos
+- Daraja sandbox STK Push supported
+- Daraja sandbox Transaction Status supported
+- PostgreSQL persistence supported
+- Redis-backed rate limiting supported
+- CI is green on GitHub Actions
+
+## Quick Demo
+
+```bash
+uv sync
+uv run pytest
+uv run python scripts/smoke_mcp_tools.py
+docker compose up --build
+```
+
+The smoke script runs fully in memory with mock Daraja behavior. Docker Compose starts FastAPI, PostgreSQL, and Redis in mock payment mode.
 
 ## Project Purpose
 
@@ -14,7 +41,7 @@ This project is a backend architecture MVP for agent-assisted M-Pesa operations.
 - "Show today's M-Pesa revenue."
 - "Show today's failed transactions."
 
-The emphasis is on safe tool boundaries, testable service layers, and replaceable infrastructure. The current implementation runs entirely in mock mode.
+The emphasis is on safe tool boundaries, testable service layers, and replaceable infrastructure. Mock mode remains the default for local demos and CI.
 
 ## Not A Payment Platform
 
@@ -23,7 +50,6 @@ This repository is not a production payment platform yet.
 It does not currently:
 
 - enable production Safaricom Daraja mode
-- persist transactions to a real database
 - cryptographically verify callback signatures or source IPs
 - execute a full human approval workflow with identity, expiry, and reviewer controls
 - provide merchant settlement, reconciliation, refunds, chargebacks, or compliance workflows
