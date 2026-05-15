@@ -21,7 +21,11 @@ from app.callbacks.replay import (
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
-from app.payments.providers import DarajaPaymentProvider, PaymentProviderProtocol
+from app.payments.providers import (
+    AirtelMoneyMockProvider,
+    DarajaPaymentProvider,
+    PaymentProviderProtocol,
+)
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RateLimiterProtocol, RedisRateLimiter
 from app.receipts.generator import ReceiptGenerator
@@ -82,7 +86,7 @@ class AppContainer:
         rate_limiter = cls._create_rate_limiter(resolved_settings)
         replay_protection = cls._create_replay_protection(resolved_settings)
         daraja_client = cls._create_daraja_client(resolved_settings)
-        payment_provider = DarajaPaymentProvider(daraja_client)
+        payment_provider = cls._create_payment_provider(resolved_settings, daraja_client)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
         receipt_generator = ReceiptGenerator()
         approval_service = ApprovalService(approval_repository=approval_repository)
@@ -146,6 +150,19 @@ class AppContainer:
             return RealDarajaClient(settings=settings)
 
         raise ValueError("DARAJA_MODE must be one of: mock, sandbox.")
+
+    @staticmethod
+    def _create_payment_provider(
+        settings: Settings,
+        daraja_client: DarajaClientProtocol,
+    ) -> PaymentProviderProtocol:
+        if settings.payment_provider == "daraja":
+            return DarajaPaymentProvider(daraja_client)
+
+        if settings.payment_provider == "airtel_mock":
+            return AirtelMoneyMockProvider()
+
+        raise ValueError("PAYMENT_PROVIDER must be one of: daraja, airtel_mock.")
 
     @staticmethod
     def _create_rate_limiter(settings: Settings) -> RateLimiterProtocol:

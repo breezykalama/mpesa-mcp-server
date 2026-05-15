@@ -12,7 +12,7 @@ from app.daraja.client import (
     TransactionStatusResponse,
 )
 from app.observability.metrics import InMemoryMetricsRecorder
-from app.payments.providers import DarajaPaymentProvider
+from app.payments.providers import AirtelMoneyMockProvider, DarajaPaymentProvider
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentService
 from app.storage.repositories import InMemoryTransactionRepository
@@ -323,6 +323,33 @@ def test_in_memory_repository_defaults_provider_fields() -> None:
     assert transaction.rail == "mpesa"
     assert transaction.provider_transaction_id is None
     assert transaction.provider_reference is None
+
+
+def test_payment_using_airtel_mock_stores_provider_and_rail() -> None:
+    repository = InMemoryTransactionRepository()
+    service = PaymentService(
+        policy=PaymentPolicy(max_stk_amount=10_000),
+        payment_provider=AirtelMoneyMockProvider(),
+        transaction_repository=repository,
+        audit_logger=InMemoryAuditLogger(),
+        approval_service=ApprovalService(approval_repository=InMemoryApprovalRepository()),
+        metrics_recorder=InMemoryMetricsRecorder(),
+    )
+
+    response = service.initiate_stk_push(
+        phone_number="254700000000",
+        amount=1_000,
+        account_reference="INV-AIRTEL-001",
+        description="Invoice payment",
+    )
+
+    assert response.transaction_id is not None
+    transaction = repository.get_transaction(response.transaction_id)
+    assert transaction is not None
+    assert transaction.provider == "airtel"
+    assert transaction.rail == "airtel_money"
+    assert transaction.provider_transaction_id == response.checkout_request_id
+    assert transaction.provider_reference == response.merchant_request_id
 
 
 def test_above_limit_stk_creates_approval_request() -> None:

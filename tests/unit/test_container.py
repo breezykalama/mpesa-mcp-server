@@ -8,7 +8,7 @@ from app.callbacks.replay import InMemoryReplayProtection, RedisReplayProtection
 from app.config import Settings
 from app.daraja.client import MockDarajaClient, RealDarajaClient
 from app.mcp.server import create_mcp_server, create_tool_handlers, list_registered_tool_names
-from app.payments.providers import DarajaPaymentProvider
+from app.payments.providers import AirtelMoneyMockProvider, DarajaPaymentProvider
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RedisRateLimiter
 from app.services.payment_service import PaymentService
@@ -88,6 +88,17 @@ def test_container_selects_real_daraja_client_for_sandbox_mode() -> None:
     )
 
     assert isinstance(container.daraja_client, RealDarajaClient)
+
+
+def test_container_selects_airtel_money_mock_provider() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+            payment_provider="airtel_mock",
+        )
+    )
+
+    assert isinstance(container.payment_provider, AirtelMoneyMockProvider)
 
 
 def test_container_selects_postgres_repository_for_postgres_storage_mode() -> None:

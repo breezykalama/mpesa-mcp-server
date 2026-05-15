@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.audit.logger import InMemoryAuditLogger
 from app.daraja.client import MockDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
-from app.payments.providers import DarajaPaymentProvider
+from app.payments.providers import AirtelMoneyMockProvider, DarajaPaymentProvider
 from app.safety.policy import PaymentPolicy
 from app.services.transaction_service import TransactionService
 from app.storage.repositories import InMemoryTransactionRepository
@@ -91,3 +91,22 @@ def test_audit_log_written() -> None:
     assert event.event_type == "transaction_status_checked"
     assert event.payload["checkout_request_id"] == "ws_CO_999"
     assert event.payload["status"] == "completed"
+
+
+def test_status_check_works_through_airtel_mock() -> None:
+    repository = InMemoryTransactionRepository()
+    audit_logger = InMemoryAuditLogger()
+    service = TransactionService(
+        policy=PaymentPolicy(max_stk_amount=10_000),
+        payment_provider=AirtelMoneyMockProvider(),
+        transaction_repository=repository,
+        audit_logger=audit_logger,
+        metrics_recorder=InMemoryMetricsRecorder(),
+    )
+
+    response = service.check_transaction_status("airtel_txn_123")
+
+    assert response.status == "query_accepted"
+    assert response.provider == "airtel"
+    assert response.rail == "airtel_money"
+    assert response.provider_transaction_id == "airtel_txn_123"

@@ -4,6 +4,8 @@ This guide helps a recruiter, engineer, or reviewer understand what the project 
 
 The demo uses mock Daraja behavior by default. It does not require real Safaricom credentials, real phone numbers, or live payments.
 
+Daraja/M-Pesa is the first real rail. A mock Airtel Money provider is also included to prove the payment layer can support multiple rails without changing the MCP tool API.
+
 ## What The Demo Proves
 
 This project demonstrates a safety-first backend architecture for agent-assisted M-Pesa workflows.
@@ -172,6 +174,33 @@ DARAJA_MODE=mock
 ```
 
 This lets reviewers run the demo safely without credentials.
+
+## Multi-Rail Provider Demo
+
+Payment execution is routed through a generic provider abstraction.
+
+Default:
+
+```env
+PAYMENT_PROVIDER=daraja
+```
+
+Mock Airtel Money demo mode:
+
+```env
+PAYMENT_PROVIDER=airtel_mock
+```
+
+The Airtel provider is mock-only. It returns fake Airtel transaction IDs and stores transactions with:
+
+```json
+{
+  "provider": "airtel",
+  "rail": "airtel_money"
+}
+```
+
+The MCP tool remains `initiate_stk_push` for compatibility with the current M-Pesa-first demo, but the service layer now supports provider-aware transaction records and can be extended with future generic payment tools.
 
 ## Local MCP Smoke Script
 

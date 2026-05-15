@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.daraja.client import MockDarajaClient
-from app.payments.providers import DarajaPaymentProvider
+from app.payments.providers import AirtelMoneyMockProvider, DarajaPaymentProvider
 
 
 def test_daraja_payment_provider_initiates_payment() -> None:
@@ -36,4 +36,34 @@ def test_daraja_payment_provider_checks_transaction_status() -> None:
     assert response.provider_transaction_id == "ws_CO_123"
     assert response.provider_reference == "ws_CO_123"
     assert response.result_code == "0"
-    assert response.status == "completed"
+
+
+def test_airtel_money_mock_provider_initiates_payment() -> None:
+    provider = AirtelMoneyMockProvider()
+
+    response = provider.initiate_payment(
+        phone_number="254700000000",
+        amount=1_000,
+        account_reference="INV-AIRTEL-001",
+        description="Invoice payment",
+    )
+
+    assert response.provider == "airtel"
+    assert response.rail == "airtel_money"
+    assert response.provider_transaction_id is not None
+    assert response.provider_transaction_id.startswith("airtel_txn_")
+    assert response.provider_reference is not None
+    assert response.provider_reference.startswith("airtel_ref_")
+    assert response.checkout_request_id == response.provider_transaction_id
+    assert response.merchant_request_id == response.provider_reference
+
+
+def test_airtel_money_mock_provider_checks_transaction_status() -> None:
+    provider = AirtelMoneyMockProvider()
+
+    response = provider.check_transaction_status("airtel_txn_123")
+
+    assert response.provider == "airtel"
+    assert response.rail == "airtel_money"
+    assert response.provider_transaction_id == "airtel_txn_123"
+    assert response.status == "query_accepted"

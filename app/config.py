@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp"
     storage_mode: str = "memory"
+    payment_provider: str = "daraja"
     daraja_mode: str = "mock"
     daraja_consumer_key: str | None = None
     daraja_consumer_secret: str | None = None

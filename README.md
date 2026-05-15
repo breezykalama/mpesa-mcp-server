@@ -16,6 +16,7 @@ The MVP demonstrates how an agent can request payment actions, check transaction
 - Mock mode complete for safe local demos
 - Daraja sandbox STK Push supported
 - Daraja sandbox Transaction Status supported
+- Mock Airtel Money provider demonstrates multi-rail architecture
 - PostgreSQL persistence supported
 - Redis-backed rate limiting supported
 - CI is green on GitHub Actions
@@ -42,6 +43,8 @@ This project is a backend architecture MVP for agent-assisted M-Pesa operations.
 - "Show today's failed transactions."
 
 The emphasis is on safe tool boundaries, testable service layers, and replaceable infrastructure. Mock mode remains the default for local demos and CI.
+
+Daraja/M-Pesa is the first real payment rail. The project also includes a mock Airtel Money provider to demonstrate that the service layer can support additional rails without changing the MCP tool API.
 
 ## Not A Payment Platform
 
@@ -180,6 +183,18 @@ This makes the system deterministic, fast to test, and safe to demo without live
 `RealDarajaClient` supports sandbox OAuth token retrieval, STK Push initiation, and Transaction Status query submission. Production mode is intentionally not enabled.
 
 For transaction status, Daraja expects an M-Pesa transaction ID or another suitable Daraja transaction reference. The public project method remains `check_transaction_status(checkout_request_id)` for compatibility, but sandbox status checks should be called with the correct Daraja transaction reference once real transaction IDs are available.
+
+## Multi-Rail Provider Abstraction
+
+Payment execution goes through a generic `PaymentProviderProtocol`. The current real adapter is `DarajaPaymentProvider`, backed by the Daraja client.
+
+The project also includes `AirtelMoneyMockProvider`, selected with:
+
+```env
+PAYMENT_PROVIDER=airtel_mock
+```
+
+This mock provider does not call Airtel or require credentials. It exists to prove that transactions can be stored with provider-aware metadata such as `provider="airtel"` and `rail="airtel_money"` while preserving the current MCP tool contract. A future generic payment tool can be added without rewriting the payment service.
 
 ## Setup
 
