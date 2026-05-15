@@ -174,6 +174,6 @@ class AppContainer:
 
 
 def create_app_container() -> AppContainer:
-    """Create the default mock-backed application container."""
+    """Create the default application container from environment settings."""
 
-    return AppContainer.mock()
+    return AppContainer.from_environment()

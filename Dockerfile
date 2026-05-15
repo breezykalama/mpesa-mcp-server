@@ -8,12 +8,15 @@ WORKDIR /app
 
 RUN python -m pip install --no-cache-dir uv
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 
-RUN uv sync --group dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
+COPY scripts ./scripts
+COPY alembic ./alembic
+COPY alembic.ini ./
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

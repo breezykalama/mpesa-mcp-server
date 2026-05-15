@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
 
     app_env: str = "development"
-    database_url: str
+    database_url: str = "postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp"
     storage_mode: str = "memory"
     daraja_mode: str = "mock"
     daraja_consumer_key: str | None = None
@@ -49,4 +49,4 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached application settings."""
 
-    return Settings()  # type: ignore[call-arg]
+    return Settings()

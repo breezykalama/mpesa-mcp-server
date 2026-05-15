@@ -209,6 +209,31 @@ GitHub Actions runs on every push and pull request. The CI workflow uses Python 
 
 The workflow does not start PostgreSQL, Redis, or call Daraja. Tests use in-memory adapters and mocked HTTP clients, so CI does not require production credentials or repository secrets.
 
+## Docker Runtime
+
+The default Docker runtime starts the FastAPI app with PostgreSQL and Redis for local validation. Daraja remains in mock mode, so no Safaricom credentials are required.
+
+```bash
+docker compose up --build
+```
+
+In another terminal, check the app health endpoint:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "storage_mode": "postgres"
+}
+```
+
+The app service uses `STORAGE_MODE=postgres`, `RATE_LIMIT_MODE=redis`, and `DARAJA_MODE=mock` by default. The MCP server remains optional and can still be started separately with `uv run python scripts/run_mcp_server.py`.
+
 ## Running The MCP Server
 
 ```bash
