@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from secrets import compare_digest
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.bootstrap.container import AppContainer, create_app_container
 from app.callbacks.handlers import CallbackProcessingResult, StkCallbackHandler
@@ -32,9 +33,39 @@ def get_stk_callback_handler(
     )
 
 
+def validate_callback_secret(
+    container: Annotated[AppContainer, Depends(get_app_container)],
+    callback_secret: Annotated[str | None, Header(alias="X-Callback-Secret")] = None,
+) -> None:
+    """Validate an optional shared secret for callback requests."""
+
+    expected_secret = container.settings.callback_shared_secret
+    if expected_secret is None or expected_secret == "":
+        return
+
+    if callback_secret is not None and compare_digest(callback_secret, expected_secret):
+        return
+
+    reason = (
+        "Missing callback shared secret."
+        if callback_secret is None
+        else "Invalid callback shared secret."
+    )
+    container.audit_logger.log_event(
+        "stk_callback_rejected",
+        {"reason": reason},
+        actor="mpesa_callback",
+    )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid callback credentials.",
+    )
+
+
 @router.post("/callbacks/mpesa/stk")
 def handle_stk_callback(
     payload: dict[str, Any],
+    _validated: Annotated[None, Depends(validate_callback_secret)],
     handler: Annotated[StkCallbackHandler, Depends(get_stk_callback_handler)],
 ) -> CallbackProcessingResult:
     """Handle an M-Pesa STK callback."""

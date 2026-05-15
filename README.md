@@ -24,8 +24,8 @@ It does not currently:
 
 - call the real Safaricom Daraja API
 - persist transactions to a real database
-- verify callback signatures or source IPs
-- implement human approval workflows
+- cryptographically verify callback signatures or source IPs
+- execute a full human approval workflow with identity, expiry, and reviewer controls
 - provide merchant settlement, reconciliation, refunds, chargebacks, or compliance workflows
 - generate legal/tax-compliant PDF receipts
 
@@ -67,6 +67,8 @@ app/daraja/     app/storage/       app/audit/
 FastAPI Callback Route
 app/callbacks/routes.py
         |
+        +--> Optional shared-secret validation
+        |
         v
 STK Callback Handler
 app/callbacks/handlers.py
@@ -83,6 +85,8 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 | `generate_receipt` | Generate a receipt for a completed transaction | Generates an in-memory structured receipt only for completed transactions |
 | `get_today_summary` | Show today's M-Pesa revenue summary | Counts in-memory transactions created today |
 | `get_failed_transactions` | Show failed transactions | Returns in-memory transactions with `failed` status |
+| `approve_payment_request` | Approve a pending risky payment request | Marks approval as approved and executes the original STK push once |
+| `reject_payment_request` | Reject a pending risky payment request | Marks approval as rejected without initiating Daraja |
 
 ## Safety Rules
 
@@ -101,6 +105,18 @@ The `PaymentPolicy` enforces the first safety boundary:
 - Unknown actions are blocked
 
 The default maximum STK amount is `10000`.
+
+## Callback Security
+
+The callback route supports an optional shared-secret guard for development and sandbox deployments:
+
+- Set `CALLBACK_SHARED_SECRET` in the environment to require callback authentication.
+- Send the same value in the `X-Callback-Secret` request header.
+- Missing or invalid secrets are rejected with `401`.
+- Rejected callback attempts are written to the audit log as `stk_callback_rejected`.
+- If `CALLBACK_SHARED_SECRET` is empty, callbacks are accepted for local mock development.
+
+This is a pragmatic MVP control, not a complete production verification strategy. A production adapter should add source validation, replay protection, payload integrity checks, and provider-specific verification when available.
 
 ## Current Mock Mode
 
@@ -138,12 +154,15 @@ The current `.env.example` includes:
 ```env
 APP_ENV=development
 DATABASE_URL=postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp
+STORAGE_MODE=memory
 
+DARAJA_MODE=mock
 DARAJA_CONSUMER_KEY=
 DARAJA_CONSUMER_SECRET=
 DARAJA_PASSKEY=
 DARAJA_SHORTCODE=
 DARAJA_CALLBACK_URL=
+CALLBACK_SHARED_SECRET=
 
 MAX_STK_AMOUNT=10000
 ```
@@ -180,6 +199,12 @@ POST /callbacks/mpesa/stk
 
 The route delegates to `StkCallbackHandler`, which parses the callback payload, updates local transaction state, and writes an audit event.
 
+When `CALLBACK_SHARED_SECRET` is configured, requests must include:
+
+```text
+X-Callback-Secret: <configured shared secret>
+```
+
 ## Example Tool Flows
 
 ### Initiate STK Push
@@ -198,6 +223,7 @@ Agent calls initiate_stk_push
 
 ```text
 M-Pesa callback payload hits POST /callbacks/mpesa/stk
+  -> route checks X-Callback-Secret if CALLBACK_SHARED_SECRET is set
   -> route delegates to StkCallbackHandler
   -> handler parses CheckoutRequestID, ResultCode, receipt metadata
   -> repository marks transaction completed or failed
@@ -240,7 +266,7 @@ Agent calls get_today_summary
 
 3. Callback verification
    - callback URL validation
-   - source verification strategy
+   - provider/source verification strategy
    - replay protection
    - payload integrity checks
 

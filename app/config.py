@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     daraja_passkey: str | None = None
     daraja_shortcode: str | None = None
     daraja_callback_url: str | None = None
+    callback_shared_secret: str | None = None
     max_stk_amount: int = 10000
 
     model_config = SettingsConfigDict(
