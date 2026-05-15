@@ -132,6 +132,24 @@ The `PaymentPolicy` enforces the first safety boundary:
 
 The default maximum STK amount is `10000`.
 
+## Safety & Governance
+
+This MVP treats payment-capable AI tools as controlled operations, not open-ended API access.
+
+Key safeguards include:
+
+- **Tool governance:** operators can enable, block, or require approval for MCP tools with `ENABLED_MCP_TOOLS`, `BLOCKED_MCP_TOOLS`, and `APPROVAL_REQUIRED_MCP_TOOLS`.
+- **Payment policy:** STK Push requests require amount and phone number validation, block invalid amounts, and route above-limit payments into approval.
+- **Approval workflow:** risky STK Push requests create approval records and are not sent to Daraja until explicitly approved.
+- **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
+- **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
+- **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
+- **Audit trail:** payment initiation, callbacks, approvals, receipt generation, and rejected security events are captured as structured audit events.
+- **Correlation IDs:** FastAPI requests and MCP tool execution carry correlation IDs through logs and audit events for traceability.
+- **Structured logs:** operational logs are JSON by default and avoid known secret fields.
+
+These controls are intentionally modular so memory-backed demo components can be replaced with Redis, PostgreSQL, and real Daraja adapters without rewriting the service layer.
+
 ## Callback Security
 
 The callback route supports an optional shared-secret guard for development and sandbox deployments:
@@ -140,9 +158,10 @@ The callback route supports an optional shared-secret guard for development and 
 - Send the same value in the `X-Callback-Secret` request header.
 - Missing or invalid secrets are rejected with `401`.
 - Rejected callback attempts are written to the audit log as `stk_callback_rejected`.
+- Duplicate callback payloads are rejected with `409` as `duplicate_callback`.
 - If `CALLBACK_SHARED_SECRET` is empty, callbacks are accepted for local mock development.
 
-This is a pragmatic MVP control, not a complete production verification strategy. A production adapter should add source validation, replay protection, payload integrity checks, and provider-specific verification when available.
+This is a pragmatic MVP control, not a complete production verification strategy. A production adapter should add source validation, stronger payload integrity checks, and provider-specific verification when available.
 
 ## Current Mock Mode
 

@@ -430,7 +430,38 @@ Missing or invalid secrets return:
 
 This demonstrates callback validation without storing or exposing real secrets.
 
-## Safety Features Demonstrated
+## Safety & Governance Features Demonstrated
+
+The demo is designed to show that payment-capable MCP tools can be wrapped in operational controls before they reach payment infrastructure.
+
+### Tool Governance
+
+Operators can control MCP tool access without code changes:
+
+- `ENABLED_MCP_TOOLS`
+- `BLOCKED_MCP_TOOLS`
+- `APPROVAL_REQUIRED_MCP_TOOLS`
+
+For example, `BLOCKED_MCP_TOOLS=initiate_stk_push` prevents the STK Push tool from executing and returns:
+
+```json
+{
+  "status": "blocked",
+  "allowed": false,
+  "reason": "Tool disabled by policy"
+}
+```
+
+`APPROVAL_REQUIRED_MCP_TOOLS=initiate_stk_push` returns:
+
+```json
+{
+  "status": "approval_required",
+  "allowed": false,
+  "reason": "Tool requires approval by policy",
+  "requires_approval": true
+}
+```
 
 ### Approval Workflow
 
@@ -463,9 +494,35 @@ When exceeded, the tool returns:
 
 The callback route can require `X-Callback-Secret`. Rejected attempts are logged as audit events.
 
+### Callback Replay Protection
+
+Duplicate callback payloads are rejected before transaction state is updated again. Replay detection uses a SHA256 fingerprint from stable callback fields:
+
+- `CheckoutRequestID`
+- `ResultCode`
+- `MpesaReceiptNumber`
+
+Duplicate callbacks return:
+
+```json
+{
+  "status": "duplicate_callback",
+  "success": false,
+  "reason": "Duplicate callback replay detected."
+}
+```
+
 ### Audit Logging
 
 Audit events are separate from operational logs and are intended for durable business/security tracking.
+
+Tracked events include payment initiation, callback processing, duplicate callbacks, rejected callbacks, approvals, and receipt generation.
+
+### Correlation IDs
+
+FastAPI requests accept `X-Correlation-ID` and return the same header in responses. If a request does not include one, the app generates a UUID-based correlation ID.
+
+The correlation ID is propagated into structured logs and audit events so reviewers can follow one request across the system.
 
 ### Structured Logs
 
@@ -476,6 +533,7 @@ Operational logs are JSON by default and include:
 - logger name
 - message
 - event type
+- correlation ID
 - exception info when present
 
 Sensitive credentials are not logged.
