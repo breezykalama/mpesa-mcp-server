@@ -246,6 +246,16 @@ uv run python scripts/run_mcp_server.py
 
 The server is created with `FastMCP` and registers the existing tool wrappers. It uses mock dependencies by default, so it is safe to run locally without Daraja credentials.
 
+## Local MCP Smoke Demo
+
+To see the tool flow without Docker, credentials, or a running MCP client, run:
+
+```bash
+uv run python scripts/smoke_mcp_tools.py
+```
+
+The script uses `AppContainer` in mock mode and calls the MCP tool wrappers directly. It demonstrates safe STK Push initiation, transaction status checking, callback simulation, receipt generation, today's summary, approval-required handling, and approval execution.
+
 ## Callback Route
 
 The FastAPI app includes a thin STK callback route:

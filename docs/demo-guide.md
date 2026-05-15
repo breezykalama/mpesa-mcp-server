@@ -173,6 +173,26 @@ DARAJA_MODE=mock
 
 This lets reviewers run the demo safely without credentials.
 
+## Local MCP Smoke Script
+
+For the fastest end-to-end demo, run the local smoke script:
+
+```bash
+uv run python scripts/smoke_mcp_tools.py
+```
+
+The script uses `AppContainer` with in-memory storage and `MockDarajaClient`. It calls the MCP tool wrapper functions directly and prints clean JSON for each step:
+
+- safe `initiate_stk_push`
+- `check_transaction_status`
+- simulated STK callback
+- `generate_receipt`
+- `get_today_summary`
+- above-limit `initiate_stk_push` returning `approval_required`
+- `approve_payment_request` executing the approved payment once
+
+No Docker, Redis, PostgreSQL, Daraja credentials, or live network calls are required.
+
 ## Sample MCP Tool Flows
 
 The examples below show simplified MCP-style inputs and responses. IDs are dummy values.
