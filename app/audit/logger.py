@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.audit.repository import AuditEvent, AuditRepositoryProtocol, InMemoryAuditRepository
+from app.observability.tracing import get_correlation_id
 
 
 class AuditLoggerProtocol(Protocol):
@@ -47,5 +48,5 @@ class InMemoryAuditLogger:
             event_type=event_type,
             payload=payload,
             actor=actor,
-            correlation_id=correlation_id,
+            correlation_id=correlation_id or get_correlation_id(),
         )

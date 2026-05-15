@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, ParamSpec, Protocol, TypeVar
 
 from pydantic import ValidationError
 
@@ -19,6 +21,7 @@ from app.mcp.schemas import (
     McpToolResponse,
     RejectPaymentRequestInput,
 )
+from app.observability.tracing import correlation_context
 from app.rate_limit.limiter import RateLimiterProtocol
 from app.services.payment_service import ApprovalExecutionResponse, PaymentResponse
 from app.services.receipt_service import ReceiptServiceResponse
@@ -26,6 +29,19 @@ from app.services.transaction_service import TransactionStatusServiceResponse
 from app.storage.repositories import PendingTransaction
 
 logger = logging.getLogger(__name__)
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def with_correlation_context(func: Callable[P, R]) -> Callable[P, R]:  # noqa: UP047
+    """Ensure MCP tool calls have an active correlation ID."""
+
+    @wraps(func)
+    def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        with correlation_context():
+            return func(*args, **kwargs)
+
+    return wrapped
 
 
 class InitiateStkPushServiceProtocol(Protocol):
@@ -84,6 +100,7 @@ class ApprovalRejectionServiceProtocol(Protocol):
         """Reject an approval request."""
 
 
+@with_correlation_context
 def initiate_stk_push_tool(
     input_data: InitiateStkPushInput | dict[str, Any],
     payment_service: InitiateStkPushServiceProtocol,
@@ -138,6 +155,7 @@ def initiate_stk_push_tool(
     )
 
 
+@with_correlation_context
 def check_transaction_status_tool(
     input_data: CheckTransactionStatusInput | dict[str, Any],
     transaction_service: CheckTransactionStatusServiceProtocol,
@@ -192,6 +210,7 @@ def check_transaction_status_tool(
     )
 
 
+@with_correlation_context
 def generate_receipt_tool(
     input_data: GenerateReceiptInput | dict[str, Any],
     receipt_service: GenerateReceiptServiceProtocol,
@@ -223,6 +242,7 @@ def generate_receipt_tool(
     )
 
 
+@with_correlation_context
 def get_today_summary_tool(
     input_data: GetTodaySummaryInput | dict[str, Any],
     analytics_service: AnalyticsServiceProtocol,
@@ -251,6 +271,7 @@ def get_today_summary_tool(
     )
 
 
+@with_correlation_context
 def get_failed_transactions_tool(
     input_data: GetFailedTransactionsInput | dict[str, Any],
     analytics_service: AnalyticsServiceProtocol,
@@ -283,6 +304,7 @@ def get_failed_transactions_tool(
     )
 
 
+@with_correlation_context
 def approve_payment_request_tool(
     input_data: ApprovePaymentRequestInput | dict[str, Any],
     payment_service: ApprovalExecutionServiceProtocol,
@@ -325,6 +347,7 @@ def approve_payment_request_tool(
     return _approval_execution_response_to_mcp_response(execution_response)
 
 
+@with_correlation_context
 def reject_payment_request_tool(
     input_data: RejectPaymentRequestInput | dict[str, Any],
     approval_service: ApprovalRejectionServiceProtocol,

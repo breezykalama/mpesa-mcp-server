@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.audit.logger import InMemoryAuditLogger
 from app.audit.repository import InMemoryAuditRepository, PostgresAuditRepository
 from app.bootstrap.container import AppContainer
+from app.observability.tracing import correlation_context
 from app.storage.models import Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -78,6 +79,18 @@ def test_audit_logger_uses_repository() -> None:
     assert len(events) == 1
     assert events[0].actor == "agent"
     assert events[0].correlation_id == "corr-456"
+
+
+def test_audit_logger_uses_context_correlation_id() -> None:
+    repository = InMemoryAuditRepository()
+    logger = InMemoryAuditLogger(repository=repository)
+
+    with correlation_context("corr-from-context"):
+        logger.log_event("payment.started", {"amount": 1_000})
+
+    events = repository.list_events()
+    assert len(events) == 1
+    assert events[0].correlation_id == "corr-from-context"
 
 
 def test_postgres_audit_repository_saves_event_with_sqlite_safe_pattern() -> None:

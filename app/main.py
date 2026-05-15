@@ -1,15 +1,16 @@
 """Application entry point."""
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 
 from app.callbacks.routes import router as callback_router
 from app.config import get_settings
 from app.logging.config import configure_logging
 from app.observability.health import router as observability_router
+from app.observability.tracing import CORRELATION_ID_HEADER, correlation_context
 
 logger = logging.getLogger(__name__)
 
@@ -28,5 +29,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="M-Pesa MCP Server", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def correlation_id_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Attach a correlation ID to each request and response."""
+
+    inbound_correlation_id = request.headers.get(CORRELATION_ID_HEADER)
+    with correlation_context(inbound_correlation_id) as correlation_id:
+        response = await call_next(request)
+        response.headers[CORRELATION_ID_HEADER] = correlation_id
+        return response
+
+
 app.include_router(callback_router)
 app.include_router(observability_router)

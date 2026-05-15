@@ -8,6 +8,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from app.observability.tracing import get_correlation_id
+
 LOG_RECORD_RESERVED_KEYS = {
     "args",
     "asctime",
@@ -60,7 +62,11 @@ class JsonLogFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        for key in SAFE_EXTRA_KEYS:
+        correlation_id = getattr(record, "correlation_id", None) or get_correlation_id()
+        if correlation_id is not None:
+            payload["correlation_id"] = correlation_id
+
+        for key in SAFE_EXTRA_KEYS - {"correlation_id"}:
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value
@@ -71,14 +77,26 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, default=str, separators=(",", ":"))
 
 
+class CorrelationIdFilter(logging.Filter):
+    """Attach the active correlation ID to log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Add correlation_id when available."""
+
+        if not hasattr(record, "correlation_id"):
+            record.correlation_id = get_correlation_id()
+        return True
+
+
 def configure_logging(*, log_level: str = "INFO", log_format: str = "json") -> None:
     """Configure application logging."""
 
     level = _resolve_log_level(log_level)
     handler = logging.StreamHandler()
+    handler.addFilter(CorrelationIdFilter())
     if log_format == "plain":
         formatter = logging.Formatter(
-            "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "%(asctime)s %(levelname)s %(name)s [correlation_id=%(correlation_id)s] %(message)s",
             datefmt="%Y-%m-%dT%H:%M:%SZ",
         )
         formatter.converter = time.gmtime
