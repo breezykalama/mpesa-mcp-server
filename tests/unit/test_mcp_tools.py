@@ -8,6 +8,7 @@ from app.audit.logger import InMemoryAuditLogger
 from app.daraja.client import MockDarajaClient
 from app.mcp.tools import initiate_stk_push_tool
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.payments.providers import DarajaPaymentProvider
 from app.policy.tool_policy import ToolPolicyEngine
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentResponse, PaymentService
@@ -51,7 +52,7 @@ class RecordingPaymentService:
 def build_payment_service(max_stk_amount: int = 10_000) -> PaymentService:
     return PaymentService(
         policy=PaymentPolicy(max_stk_amount=max_stk_amount),
-        daraja_client=MockDarajaClient(),
+        payment_provider=DarajaPaymentProvider(MockDarajaClient()),
         transaction_repository=InMemoryTransactionRepository(),
         audit_logger=InMemoryAuditLogger(),
         approval_service=ApprovalService(approval_repository=InMemoryApprovalRepository()),

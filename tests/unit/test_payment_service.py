@@ -12,6 +12,7 @@ from app.daraja.client import (
     TransactionStatusResponse,
 )
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.payments.providers import DarajaPaymentProvider
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentService
 from app.storage.repositories import InMemoryTransactionRepository
@@ -90,7 +91,7 @@ def build_service_components(
     approval_service = ApprovalService(approval_repository=InMemoryApprovalRepository())
     service = PaymentService(
         policy=PaymentPolicy(max_stk_amount=max_stk_amount),
-        daraja_client=daraja_client or MockDarajaClient(),
+        payment_provider=DarajaPaymentProvider(daraja_client or MockDarajaClient()),
         transaction_repository=repository,
         audit_logger=audit_logger,
         approval_service=approval_service,
@@ -168,7 +169,7 @@ def test_daraja_failure_returns_failed_response() -> None:
 
     assert response.status == "failed"
     assert response.allowed is False
-    assert "Daraja STK push failed" in response.reason
+    assert "Payment provider initiation failed" in response.reason
     assert audit_logger.events == []
 
 
@@ -308,7 +309,7 @@ def test_above_limit_stk_creates_approval_request() -> None:
     approval_service = ApprovalService(approval_repository=InMemoryApprovalRepository())
     service = PaymentService(
         policy=PaymentPolicy(max_stk_amount=500),
-        daraja_client=MockDarajaClient(),
+        payment_provider=DarajaPaymentProvider(MockDarajaClient()),
         transaction_repository=repository,
         audit_logger=audit_logger,
         approval_service=approval_service,

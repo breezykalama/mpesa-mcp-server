@@ -21,6 +21,7 @@ from app.callbacks.replay import (
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.payments.providers import DarajaPaymentProvider, PaymentProviderProtocol
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RateLimiterProtocol, RedisRateLimiter
 from app.receipts.generator import ReceiptGenerator
@@ -45,6 +46,7 @@ class AppContainer:
     settings: Settings
     payment_policy: PaymentPolicy
     daraja_client: DarajaClientProtocol
+    payment_provider: PaymentProviderProtocol
     transaction_repository: TransactionRepositoryProtocol
     approval_repository: InMemoryApprovalRepository
     audit_repository: AuditRepositoryProtocol
@@ -78,6 +80,7 @@ class AppContainer:
         rate_limiter = cls._create_rate_limiter(resolved_settings)
         replay_protection = cls._create_replay_protection(resolved_settings)
         daraja_client = cls._create_daraja_client(resolved_settings)
+        payment_provider = DarajaPaymentProvider(daraja_client)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
         receipt_generator = ReceiptGenerator()
         approval_service = ApprovalService(approval_repository=approval_repository)
@@ -86,6 +89,7 @@ class AppContainer:
             settings=resolved_settings,
             payment_policy=payment_policy,
             daraja_client=daraja_client,
+            payment_provider=payment_provider,
             transaction_repository=transaction_repository,
             approval_repository=approval_repository,
             audit_repository=audit_repository,
@@ -98,7 +102,7 @@ class AppContainer:
             approval_service=approval_service,
             payment_service=PaymentService(
                 policy=payment_policy,
-                daraja_client=daraja_client,
+                payment_provider=payment_provider,
                 transaction_repository=transaction_repository,
                 audit_logger=audit_logger,
                 approval_service=approval_service,
@@ -106,7 +110,7 @@ class AppContainer:
             ),
             transaction_service=TransactionService(
                 policy=payment_policy,
-                daraja_client=daraja_client,
+                payment_provider=payment_provider,
                 transaction_repository=transaction_repository,
                 audit_logger=audit_logger,
                 metrics_recorder=metrics_recorder,

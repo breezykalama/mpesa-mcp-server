@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from app.approvals.models import ApprovalRequest
 from app.approvals.service import ApprovalService
 from app.audit.logger import AuditLoggerProtocol
-from app.daraja.client import DarajaClientProtocol, StkPushResponse
 from app.observability.metrics import MetricsRecorder
+from app.payments.providers import PaymentInitiationResponse, PaymentProviderProtocol
 from app.safety.policy import PaymentActionRequest, PaymentPolicy
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
 
@@ -46,20 +46,20 @@ class ApprovalExecutionResponse(BaseModel):
 
 
 class PaymentService:
-    """Coordinate payment safety checks, Daraja calls, persistence, and audit logging."""
+    """Coordinate payment safety checks, provider calls, persistence, and audit logging."""
 
     def __init__(
         self,
         *,
         policy: PaymentPolicy,
-        daraja_client: DarajaClientProtocol,
+        payment_provider: PaymentProviderProtocol,
         transaction_repository: TransactionRepositoryProtocol,
         audit_logger: AuditLoggerProtocol,
         approval_service: ApprovalService,
         metrics_recorder: MetricsRecorder,
     ) -> None:
         self._policy = policy
-        self._daraja_client = daraja_client
+        self._payment_provider = payment_provider
         self._transaction_repository = transaction_repository
         self._audit_logger = audit_logger
         self._approval_service = approval_service
@@ -294,7 +294,7 @@ class PaymentService:
                 "Payment initiation started.",
                 extra={"event_type": "payment_initiation_started", "amount": amount},
             )
-            daraja_response = self._daraja_client.initiate_stk_push(
+            provider_response = self._payment_provider.initiate_payment(
                 phone_number=phone_number,
                 amount=amount,
                 account_reference=account_reference,
@@ -309,7 +309,7 @@ class PaymentService:
             return PaymentResponse(
                 status="failed",
                 allowed=False,
-                reason=f"Daraja STK push failed: {exc}",
+                reason=f"Payment provider initiation failed: {exc}",
             )
 
         transaction = self._transaction_repository.save_pending_transaction(
@@ -317,12 +317,12 @@ class PaymentService:
             amount=amount,
             account_reference=account_reference,
             description=description,
-            checkout_request_id=daraja_response.checkout_request_id,
-            merchant_request_id=daraja_response.merchant_request_id,
+            checkout_request_id=provider_response.checkout_request_id,
+            merchant_request_id=provider_response.merchant_request_id,
             idempotency_key=idempotency_key,
         )
 
-        self._log_success(transaction, daraja_response)
+        self._log_success(transaction, provider_response)
         logger.info(
             "Payment initiated.",
             extra={
@@ -339,11 +339,11 @@ class PaymentService:
             allowed=True,
             reason="STK push initiated successfully.",
             transaction_id=transaction.transaction_id,
-            checkout_request_id=daraja_response.checkout_request_id,
-            merchant_request_id=daraja_response.merchant_request_id,
+            checkout_request_id=provider_response.checkout_request_id,
+            merchant_request_id=provider_response.merchant_request_id,
             idempotency_key=idempotency_key,
-            response_code=daraja_response.response_code,
-            response_description=daraja_response.response_description,
+            response_code=provider_response.response_code,
+            response_description=provider_response.response_description,
         )
 
     def _derive_idempotency_key(
@@ -374,7 +374,7 @@ class PaymentService:
     def _log_success(
         self,
         transaction: PendingTransaction,
-        daraja_response: StkPushResponse,
+        provider_response: PaymentInitiationResponse,
     ) -> None:
         self._audit_logger.log_event(
             "stk_push_initiated",
@@ -383,7 +383,7 @@ class PaymentService:
                 "amount": transaction.amount,
                 "phone_number": transaction.phone_number,
                 "idempotency_key": transaction.idempotency_key,
-                "checkout_request_id": daraja_response.checkout_request_id,
-                "merchant_request_id": daraja_response.merchant_request_id,
+                "checkout_request_id": provider_response.checkout_request_id,
+                "merchant_request_id": provider_response.merchant_request_id,
             },
         )

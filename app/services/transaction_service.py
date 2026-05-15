@@ -8,8 +8,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.audit.logger import AuditLoggerProtocol
-from app.daraja.client import DarajaClientProtocol
 from app.observability.metrics import MetricsRecorder
+from app.payments.providers import PaymentProviderProtocol
 from app.safety.policy import PaymentActionRequest, PaymentPolicy
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
 
@@ -36,13 +36,13 @@ class TransactionService:
         self,
         *,
         policy: PaymentPolicy,
-        daraja_client: DarajaClientProtocol,
+        payment_provider: PaymentProviderProtocol,
         transaction_repository: TransactionRepositoryProtocol,
         audit_logger: AuditLoggerProtocol,
         metrics_recorder: MetricsRecorder,
     ) -> None:
         self._policy = policy
-        self._daraja_client = daraja_client
+        self._payment_provider = payment_provider
         self._transaction_repository = transaction_repository
         self._audit_logger = audit_logger
         self._metrics_recorder = metrics_recorder
@@ -94,13 +94,13 @@ class TransactionService:
             "Transaction status query started.",
             extra={"event_type": "transaction_status_query_started"},
         )
-        daraja_response = self._daraja_client.check_transaction_status(checkout_request_id)
+        provider_response = self._payment_provider.check_transaction_status(checkout_request_id)
 
         self._audit_logger.log_event(
             "transaction_status_checked",
             {
                 "checkout_request_id": checkout_request_id,
-                "status": daraja_response.status,
+                "status": provider_response.status,
                 "local_transaction_id": (
                     local_transaction.transaction_id if local_transaction is not None else None
                 ),
@@ -111,16 +111,16 @@ class TransactionService:
             "Transaction status checked.",
             extra={
                 "event_type": "transaction_status_checked",
-                "status": daraja_response.status,
+                "status": provider_response.status,
             },
         )
         return TransactionStatusServiceResponse(
-            status=daraja_response.status,
+            status=provider_response.status,
             allowed=True,
-            reason=daraja_response.result_description,
-            checkout_request_id=daraja_response.checkout_request_id,
-            result_code=daraja_response.result_code,
-            result_description=daraja_response.result_description,
+            reason=provider_response.result_description,
+            checkout_request_id=provider_response.checkout_request_id,
+            result_code=provider_response.result_code,
+            result_description=provider_response.result_description,
             local_transaction=self._dump_local_transaction(local_transaction),
         )
 

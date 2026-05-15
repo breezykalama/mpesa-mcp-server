@@ -1,0 +1,90 @@
+"""Payment provider abstractions and adapters."""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from pydantic import BaseModel
+
+from app.daraja.client import DarajaClientProtocol
+
+
+class PaymentInitiationResponse(BaseModel):
+    """Generic payment initiation response."""
+
+    checkout_request_id: str
+    merchant_request_id: str
+    response_code: str
+    response_description: str
+
+
+class PaymentStatusResponse(BaseModel):
+    """Generic payment status response."""
+
+    checkout_request_id: str
+    result_code: str
+    result_description: str
+    status: str
+
+
+class PaymentProviderProtocol(Protocol):
+    """Generic payment provider interface."""
+
+    def initiate_payment(
+        self,
+        *,
+        phone_number: str,
+        amount: int,
+        account_reference: str,
+        description: str,
+    ) -> PaymentInitiationResponse:
+        """Initiate a payment request."""
+
+    def check_transaction_status(self, transaction_reference: str) -> PaymentStatusResponse:
+        """Check payment status by provider transaction reference."""
+
+
+class DarajaPaymentProvider:
+    """Payment provider adapter backed by an existing Daraja client."""
+
+    def __init__(self, daraja_client: DarajaClientProtocol) -> None:
+        self._daraja_client = daraja_client
+
+    def initiate_payment(
+        self,
+        *,
+        phone_number: str,
+        amount: int,
+        account_reference: str,
+        description: str,
+    ) -> PaymentInitiationResponse:
+        """Initiate payment through Daraja STK Push."""
+
+        response = self._daraja_client.initiate_stk_push(
+            phone_number=phone_number,
+            amount=amount,
+            account_reference=account_reference,
+            description=description,
+        )
+        return PaymentInitiationResponse(
+            checkout_request_id=response.checkout_request_id,
+            merchant_request_id=response.merchant_request_id,
+            response_code=response.response_code,
+            response_description=response.response_description,
+        )
+
+    def check_transaction_status(self, transaction_reference: str) -> PaymentStatusResponse:
+        """Check transaction status through Daraja."""
+
+        response = self._daraja_client.check_transaction_status(transaction_reference)
+        return PaymentStatusResponse(
+            checkout_request_id=response.checkout_request_id,
+            result_code=response.result_code,
+            result_description=response.result_description,
+            status=response.status,
+        )
+
+
+# TODO: Add AirtelMoneyPaymentProvider when Airtel Money API credentials and flows are scoped.
+# TODO: Add MTNMoMoPaymentProvider when MTN MoMo API credentials and flows are scoped.
+# TODO: Add BankTransferProvider when bank rails and reconciliation requirements are scoped.

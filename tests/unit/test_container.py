@@ -8,6 +8,7 @@ from app.callbacks.replay import InMemoryReplayProtection, RedisReplayProtection
 from app.config import Settings
 from app.daraja.client import MockDarajaClient, RealDarajaClient
 from app.mcp.server import create_mcp_server, create_tool_handlers, list_registered_tool_names
+from app.payments.providers import DarajaPaymentProvider
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RedisRateLimiter
 from app.services.payment_service import PaymentService
@@ -21,6 +22,7 @@ def test_container_builds_successfully() -> None:
 
     assert container.settings.database_url == DEFAULT_MOCK_DATABASE_URL
     assert isinstance(container.daraja_client, MockDarajaClient)
+    assert isinstance(container.payment_provider, DarajaPaymentProvider)
     assert isinstance(container.transaction_repository, InMemoryTransactionRepository)
     assert isinstance(container.audit_repository, InMemoryAuditRepository)
     assert isinstance(container.tool_policy, ToolPolicyEngine)

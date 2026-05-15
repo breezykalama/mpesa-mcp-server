@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.audit.logger import InMemoryAuditLogger
 from app.daraja.client import MockDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.payments.providers import DarajaPaymentProvider
 from app.safety.policy import PaymentPolicy
 from app.services.transaction_service import TransactionService
 from app.storage.repositories import InMemoryTransactionRepository
@@ -19,7 +20,7 @@ def build_service() -> tuple[
     audit_logger = InMemoryAuditLogger()
     service = TransactionService(
         policy=PaymentPolicy(max_stk_amount=10_000),
-        daraja_client=MockDarajaClient(),
+        payment_provider=DarajaPaymentProvider(MockDarajaClient()),
         transaction_repository=repository,
         audit_logger=audit_logger,
         metrics_recorder=InMemoryMetricsRecorder(),
