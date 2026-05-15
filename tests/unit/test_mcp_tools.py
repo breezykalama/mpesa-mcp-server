@@ -8,6 +8,7 @@ from app.audit.logger import InMemoryAuditLogger
 from app.daraja.client import MockDarajaClient
 from app.mcp.tools import initiate_stk_push_tool
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.policy.tool_policy import ToolPolicyEngine
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentResponse, PaymentService
 from app.storage.repositories import InMemoryTransactionRepository
@@ -131,3 +132,46 @@ def test_tool_delegates_to_payment_service() -> None:
     assert service.description == "Invoice payment"
     assert service.idempotency_key == "mcp-key"
     assert response.status == "pending"
+
+
+def test_blocked_tool_denied_by_policy() -> None:
+    service = RecordingPaymentService()
+    policy = ToolPolicyEngine(blocked_tools={"initiate_stk_push"})
+
+    response = initiate_stk_push_tool(
+        {
+            "phone_number": "254700000000",
+            "amount": 1_000,
+            "account_reference": "INV-005",
+            "description": "Invoice payment",
+        },
+        service,
+        tool_policy=policy,
+    )
+
+    assert response.status == "blocked"
+    assert response.allowed is False
+    assert response.reason == "Tool disabled by policy"
+    assert service.called is False
+
+
+def test_approval_required_tool_returns_policy_approval_required() -> None:
+    service = RecordingPaymentService()
+    policy = ToolPolicyEngine(approval_required_tools={"initiate_stk_push"})
+
+    response = initiate_stk_push_tool(
+        {
+            "phone_number": "254700000000",
+            "amount": 1_000,
+            "account_reference": "INV-006",
+            "description": "Invoice payment",
+        },
+        service,
+        tool_policy=policy,
+    )
+
+    assert response.status == "approval_required"
+    assert response.allowed is False
+    assert response.requires_approval is True
+    assert response.reason == "Tool requires approval by policy"
+    assert service.called is False

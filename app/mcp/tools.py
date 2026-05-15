@@ -22,6 +22,7 @@ from app.mcp.schemas import (
     RejectPaymentRequestInput,
 )
 from app.observability.tracing import correlation_context
+from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import RateLimiterProtocol
 from app.services.payment_service import ApprovalExecutionResponse, PaymentResponse
 from app.services.receipt_service import ReceiptServiceResponse
@@ -109,8 +110,13 @@ def initiate_stk_push_tool(
     rate_limit_enabled: bool = False,
     rate_limit_window_seconds: int = 60,
     rate_limit_max_requests: int = 5,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate STK push initiation to the payment service."""
+
+    policy_response = _check_tool_policy("initiate_stk_push", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         tool_input = _validate_input(input_data)
@@ -164,8 +170,13 @@ def check_transaction_status_tool(
     rate_limit_enabled: bool = False,
     rate_limit_window_seconds: int = 60,
     rate_limit_max_requests: int = 30,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate transaction status checks to the service."""
+
+    policy_response = _check_tool_policy("check_transaction_status", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         tool_input = _validate_transaction_status_input(input_data)
@@ -214,8 +225,14 @@ def check_transaction_status_tool(
 def generate_receipt_tool(
     input_data: GenerateReceiptInput | dict[str, Any],
     receipt_service: GenerateReceiptServiceProtocol,
+    *,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate receipt generation to the service."""
+
+    policy_response = _check_tool_policy("generate_receipt", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         tool_input = _validate_generate_receipt_input(input_data)
@@ -246,8 +263,14 @@ def generate_receipt_tool(
 def get_today_summary_tool(
     input_data: GetTodaySummaryInput | dict[str, Any],
     analytics_service: AnalyticsServiceProtocol,
+    *,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate today's summary to the analytics service."""
+
+    policy_response = _check_tool_policy("get_today_summary", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         _validate_today_summary_input(input_data)
@@ -275,8 +298,14 @@ def get_today_summary_tool(
 def get_failed_transactions_tool(
     input_data: GetFailedTransactionsInput | dict[str, Any],
     analytics_service: AnalyticsServiceProtocol,
+    *,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate failed transaction lookup to analytics service."""
+
+    policy_response = _check_tool_policy("get_failed_transactions", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         _validate_failed_transactions_input(input_data)
@@ -313,8 +342,13 @@ def approve_payment_request_tool(
     rate_limit_enabled: bool = False,
     rate_limit_window_seconds: int = 60,
     rate_limit_max_requests: int = 10,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate approval execution to the payment service."""
+
+    policy_response = _check_tool_policy("approve_payment_request", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         tool_input = _validate_approve_payment_request_input(input_data)
@@ -356,8 +390,13 @@ def reject_payment_request_tool(
     rate_limit_enabled: bool = False,
     rate_limit_window_seconds: int = 60,
     rate_limit_max_requests: int = 10,
+    tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
     """Validate MCP input and delegate rejection to the approval service."""
+
+    policy_response = _check_tool_policy("reject_payment_request", tool_policy)
+    if policy_response is not None:
+        return policy_response
 
     try:
         tool_input = _validate_reject_payment_request_input(input_data)
@@ -507,6 +546,30 @@ def _check_rate_limit(
             "limit": decision.limit,
             "reset_after_seconds": decision.reset_after_seconds,
         },
+    )
+
+
+def _check_tool_policy(
+    tool_name: str,
+    tool_policy: ToolPolicyEngine | None,
+) -> McpToolResponse | None:
+    if tool_policy is None:
+        return None
+
+    decision = tool_policy.evaluate(tool_name)
+    if decision.allowed:
+        return None
+
+    _log_tool_event(
+        tool_name,
+        "mcp_tool_policy_denied",
+        status=decision.status,
+    )
+    return McpToolResponse(
+        status=decision.status,
+        allowed=False,
+        reason=decision.reason,
+        requires_approval=decision.requires_approval,
     )
 
 

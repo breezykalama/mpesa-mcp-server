@@ -71,6 +71,7 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
             rate_limit_enabled=container.settings.rate_limit_enabled,
             rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
             rate_limit_max_requests=container.settings.rate_limit_max_stk_push,
+            tool_policy=container.tool_policy,
         )
         return response.model_dump(mode="json")
 
@@ -82,6 +83,7 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
             rate_limit_enabled=container.settings.rate_limit_enabled,
             rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
             rate_limit_max_requests=container.settings.rate_limit_max_status_checks,
+            tool_policy=container.tool_policy,
         )
         return response.model_dump(mode="json")
 
@@ -89,15 +91,24 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         response = generate_receipt_tool(
             {"checkout_request_id": checkout_request_id},
             container.receipt_service,
+            tool_policy=container.tool_policy,
         )
         return response.model_dump(mode="json")
 
     def get_today_summary() -> dict[str, Any]:
-        response = get_today_summary_tool({}, container.analytics_service)
+        response = get_today_summary_tool(
+            {},
+            container.analytics_service,
+            tool_policy=container.tool_policy,
+        )
         return response.model_dump(mode="json")
 
     def get_failed_transactions() -> dict[str, Any]:
-        response = get_failed_transactions_tool({}, container.analytics_service)
+        response = get_failed_transactions_tool(
+            {},
+            container.analytics_service,
+            tool_policy=container.tool_policy,
+        )
         return response.model_dump(mode="json")
 
     def approve_payment_request(approval_id: str) -> dict[str, Any]:
@@ -108,6 +119,7 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
             rate_limit_enabled=container.settings.rate_limit_enabled,
             rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
             rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
+            tool_policy=container.tool_policy,
         )
         return response.model_dump(mode="json")
 
@@ -119,6 +131,7 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
             rate_limit_enabled=container.settings.rate_limit_enabled,
             rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
             rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
+            tool_policy=container.tool_policy,
         )
         return response.model_dump(mode="json")
 

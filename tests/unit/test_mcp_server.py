@@ -71,8 +71,9 @@ def test_registered_handler_delegates_to_today_summary_wrapper(monkeypatch: Monk
     def fake_get_today_summary_tool(
         input_data: dict[str, Any],
         analytics_service: object,
+        **kwargs: object,
     ) -> McpToolResponse:
-        calls.append(analytics_service)
+        calls.append({"analytics_service": analytics_service, "kwargs": kwargs})
         return McpToolResponse(
             status="ok",
             allowed=True,
@@ -89,4 +90,9 @@ def test_registered_handler_delegates_to_today_summary_wrapper(monkeypatch: Monk
     response = handlers["get_today_summary"]()
 
     assert response["data"]["summary"]["total_revenue"] == 0
-    assert calls == [dependencies.analytics_service]
+    assert calls == [
+        {
+            "analytics_service": dependencies.analytics_service,
+            "kwargs": {"tool_policy": dependencies.tool_policy},
+        }
+    ]

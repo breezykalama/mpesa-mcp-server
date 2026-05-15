@@ -21,6 +21,7 @@ from app.callbacks.replay import (
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import InMemoryRateLimiter, RateLimiterProtocol, RedisRateLimiter
 from app.receipts.generator import ReceiptGenerator
 from app.safety.policy import PaymentPolicy
@@ -49,6 +50,7 @@ class AppContainer:
     audit_repository: AuditRepositoryProtocol
     audit_logger: InMemoryAuditLogger
     metrics_recorder: InMemoryMetricsRecorder
+    tool_policy: ToolPolicyEngine
     rate_limiter: RateLimiterProtocol
     replay_protection: ReplayProtectionProtocol
     receipt_generator: ReceiptGenerator
@@ -72,6 +74,7 @@ class AppContainer:
         audit_repository = cls._create_audit_repository(resolved_settings, session_factory)
         audit_logger = InMemoryAuditLogger(repository=audit_repository)
         metrics_recorder = InMemoryMetricsRecorder()
+        tool_policy = ToolPolicyEngine.from_settings(resolved_settings)
         rate_limiter = cls._create_rate_limiter(resolved_settings)
         replay_protection = cls._create_replay_protection(resolved_settings)
         daraja_client = cls._create_daraja_client(resolved_settings)
@@ -88,6 +91,7 @@ class AppContainer:
             audit_repository=audit_repository,
             audit_logger=audit_logger,
             metrics_recorder=metrics_recorder,
+            tool_policy=tool_policy,
             rate_limiter=rate_limiter,
             replay_protection=replay_protection,
             receipt_generator=receipt_generator,

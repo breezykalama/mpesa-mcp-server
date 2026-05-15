@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     rate_limit_max_stk_push: int = 5
     rate_limit_max_approval_actions: int = 10
     rate_limit_max_status_checks: int = 30
+    enabled_mcp_tools: str = ""
+    blocked_mcp_tools: str = ""
+    approval_required_mcp_tools: str = ""
     redis_url: str = "redis://localhost:6379/0"
     log_level: str = "INFO"
     log_format: str = "json"
