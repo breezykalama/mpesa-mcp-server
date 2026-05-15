@@ -34,8 +34,15 @@ def test_registered_handler_delegates_to_stk_push_wrapper(monkeypatch: MonkeyPat
     def fake_initiate_stk_push_tool(
         input_data: dict[str, Any],
         payment_service: object,
+        **kwargs: object,
     ) -> McpToolResponse:
-        calls.append({"input_data": input_data, "payment_service": payment_service})
+        calls.append(
+            {
+                "input_data": input_data,
+                "payment_service": payment_service,
+                "kwargs": kwargs,
+            }
+        )
         return McpToolResponse(status="ok", allowed=True, reason="delegated")
 
     monkeypatch.setattr(
@@ -54,6 +61,7 @@ def test_registered_handler_delegates_to_stk_push_wrapper(monkeypatch: MonkeyPat
     assert response["status"] == "ok"
     assert calls[0]["input_data"]["phone_number"] == "254700000000"
     assert calls[0]["payment_service"] is dependencies.payment_service
+    assert calls[0]["kwargs"]["rate_limiter"] is dependencies.rate_limiter
 
 
 def test_registered_handler_delegates_to_today_summary_wrapper(monkeypatch: MonkeyPatch) -> None:

@@ -17,6 +17,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "python-dotenv",
+    "redis>=7.4.0",
     "sqlalchemy",
     "uvicorn",
 ]

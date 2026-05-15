@@ -64,6 +64,10 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
                 "idempotency_key": idempotency_key,
             },
             container.payment_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_stk_push,
         )
         return response.model_dump(mode="json")
 
@@ -71,6 +75,10 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         response = check_transaction_status_tool(
             {"checkout_request_id": checkout_request_id},
             container.transaction_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_status_checks,
         )
         return response.model_dump(mode="json")
 
@@ -93,6 +101,10 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         response = approve_payment_request_tool(
             {"approval_id": approval_id},
             container.payment_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
         )
         return response.model_dump(mode="json")
 
@@ -100,6 +112,10 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         response = reject_payment_request_tool(
             {"approval_id": approval_id},
             container.approval_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
         )
         return response.model_dump(mode="json")
 

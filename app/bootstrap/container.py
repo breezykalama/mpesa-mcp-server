@@ -16,6 +16,7 @@ from app.audit.repository import (
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
+from app.rate_limit.limiter import InMemoryRateLimiter, RateLimiterProtocol, RedisRateLimiter
 from app.receipts.generator import ReceiptGenerator
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentService
@@ -43,6 +44,7 @@ class AppContainer:
     audit_repository: AuditRepositoryProtocol
     audit_logger: InMemoryAuditLogger
     metrics_recorder: InMemoryMetricsRecorder
+    rate_limiter: RateLimiterProtocol
     receipt_generator: ReceiptGenerator
     payment_service: PaymentService
     approval_service: ApprovalService
@@ -64,6 +66,7 @@ class AppContainer:
         audit_repository = cls._create_audit_repository(resolved_settings, session_factory)
         audit_logger = InMemoryAuditLogger(repository=audit_repository)
         metrics_recorder = InMemoryMetricsRecorder()
+        rate_limiter = cls._create_rate_limiter(resolved_settings)
         daraja_client = cls._create_daraja_client(resolved_settings)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
         receipt_generator = ReceiptGenerator()
@@ -78,6 +81,7 @@ class AppContainer:
             audit_repository=audit_repository,
             audit_logger=audit_logger,
             metrics_recorder=metrics_recorder,
+            rate_limiter=rate_limiter,
             receipt_generator=receipt_generator,
             approval_service=approval_service,
             payment_service=PaymentService(
@@ -119,6 +123,16 @@ class AppContainer:
             return RealDarajaClient(settings=settings)
 
         raise ValueError("DARAJA_MODE must be one of: mock, sandbox.")
+
+    @staticmethod
+    def _create_rate_limiter(settings: Settings) -> RateLimiterProtocol:
+        if settings.rate_limit_mode == "memory":
+            return InMemoryRateLimiter()
+
+        if settings.rate_limit_mode == "redis":
+            return RedisRateLimiter(redis_url=settings.redis_url)
+
+        raise ValueError("RATE_LIMIT_MODE must be one of: memory, redis.")
 
     @staticmethod
     def _create_session_factory(settings: Settings) -> SessionFactory | None:

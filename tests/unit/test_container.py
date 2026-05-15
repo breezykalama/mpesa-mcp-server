@@ -7,6 +7,7 @@ from app.bootstrap.container import DEFAULT_MOCK_DATABASE_URL, AppContainer
 from app.config import Settings
 from app.daraja.client import MockDarajaClient, RealDarajaClient
 from app.mcp.server import create_mcp_server, create_tool_handlers, list_registered_tool_names
+from app.rate_limit.limiter import InMemoryRateLimiter, RedisRateLimiter
 from app.services.payment_service import PaymentService
 from app.services.receipt_service import ReceiptService
 from app.services.transaction_service import TransactionService
@@ -20,6 +21,7 @@ def test_container_builds_successfully() -> None:
     assert isinstance(container.daraja_client, MockDarajaClient)
     assert isinstance(container.transaction_repository, InMemoryTransactionRepository)
     assert isinstance(container.audit_repository, InMemoryAuditRepository)
+    assert isinstance(container.rate_limiter, InMemoryRateLimiter)
 
 
 def test_services_are_correctly_wired() -> None:
@@ -91,3 +93,15 @@ def test_container_selects_postgres_repository_for_postgres_storage_mode() -> No
 
     assert isinstance(container.transaction_repository, PostgresTransactionRepository)
     assert isinstance(container.audit_repository, PostgresAuditRepository)
+
+
+def test_container_selects_redis_rate_limiter_for_redis_mode() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            rate_limit_mode="redis",
+            redis_url="redis://localhost:6379/1",
+        )
+    )
+
+    assert isinstance(container.rate_limiter, RedisRateLimiter)

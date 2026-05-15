@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     daraja_callback_url: str | None = None
     callback_shared_secret: str | None = None
     max_stk_amount: int = 10000
+    rate_limit_enabled: bool = True
+    rate_limit_mode: str = "memory"
+    rate_limit_window_seconds: int = 60
+    rate_limit_max_stk_push: int = 5
+    rate_limit_max_approval_actions: int = 10
+    rate_limit_max_status_checks: int = 30
+    redis_url: str = "redis://localhost:6379/0"
 
     model_config = SettingsConfigDict(
         env_file=".env",
