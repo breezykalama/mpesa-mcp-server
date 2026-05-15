@@ -213,6 +213,8 @@ The workflow does not start PostgreSQL, Redis, or call Daraja. Tests use in-memo
 
 The default Docker runtime starts the FastAPI app with PostgreSQL and Redis for local validation. Daraja remains in mock mode, so no Safaricom credentials are required.
 
+For a guided walkthrough of the demo, see [docs/demo-guide.md](docs/demo-guide.md).
+
 ```bash
 docker compose up --build
 ```
