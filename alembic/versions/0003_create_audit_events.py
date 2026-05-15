@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0003_create_audit_events"
-down_revision = "0002_add_transaction_idempotency_key"
+revision = "0003_audit_events"
+down_revision = "0002_idempotency_key"
 branch_labels = None
 depends_on = None
 

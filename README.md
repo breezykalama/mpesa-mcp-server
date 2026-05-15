@@ -217,6 +217,8 @@ The default Docker runtime starts the FastAPI app with PostgreSQL and Redis for 
 docker compose up --build
 ```
 
+When `STORAGE_MODE=postgres`, the app container runs `alembic upgrade head` before starting FastAPI. Migration failures stop startup so schema issues are visible immediately.
+
 In another terminal, check the app health endpoint:
 
 ```bash
