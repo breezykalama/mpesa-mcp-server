@@ -22,7 +22,7 @@ This repository is not a production payment platform yet.
 
 It does not currently:
 
-- call the real Safaricom Daraja API
+- enable production Safaricom Daraja mode
 - persist transactions to a real database
 - cryptographically verify callback signatures or source IPs
 - execute a full human approval workflow with identity, expiry, and reviewer controls
@@ -81,7 +81,7 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 | Tool | Purpose | Current behavior |
 | --- | --- | --- |
 | `initiate_stk_push` | Start an STK push request | Uses `MockDarajaClient`, saves a pending transaction in memory |
-| `check_transaction_status` | Check a checkout request status | Uses mock Daraja status response and includes local transaction data when found |
+| `check_transaction_status` | Check a transaction reference status | Uses mock mode by default; sandbox mode can submit a Daraja Transaction Status query |
 | `generate_receipt` | Generate a receipt for a completed transaction | Generates an in-memory structured receipt only for completed transactions |
 | `get_today_summary` | Show today's M-Pesa revenue summary | Counts in-memory transactions created today |
 | `get_failed_transactions` | Show failed transactions | Returns in-memory transactions with `failed` status |
@@ -130,6 +130,12 @@ The MVP is intentionally mock-backed:
 
 This makes the system deterministic, fast to test, and safe to demo without live payment credentials.
 
+## Daraja Sandbox Support
+
+`RealDarajaClient` supports sandbox OAuth token retrieval, STK Push initiation, and Transaction Status query submission. Production mode is intentionally not enabled.
+
+For transaction status, Daraja expects an M-Pesa transaction ID or another suitable Daraja transaction reference. The public project method remains `check_transaction_status(checkout_request_id)` for compatibility, but sandbox status checks should be called with the correct Daraja transaction reference once real transaction IDs are available.
+
 ## Setup
 
 Requirements:
@@ -162,9 +168,25 @@ DARAJA_CONSUMER_SECRET=
 DARAJA_PASSKEY=
 DARAJA_SHORTCODE=
 DARAJA_CALLBACK_URL=
+DARAJA_INITIATOR_NAME=
+DARAJA_SECURITY_CREDENTIAL=
+DARAJA_TRANSACTION_STATUS_RESULT_URL=
+DARAJA_TRANSACTION_STATUS_TIMEOUT_URL=
+DARAJA_IDENTIFIER_TYPE=4
+DARAJA_TRANSACTION_STATUS_REMARKS=Transaction status query
+DARAJA_TRANSACTION_STATUS_OCCASION=Mpesa MCP status check
 CALLBACK_SHARED_SECRET=
 
 MAX_STK_AMOUNT=10000
+
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_MODE=memory
+RATE_LIMIT_WINDOW_SECONDS=60
+RATE_LIMIT_MAX_STK_PUSH=5
+RATE_LIMIT_MAX_APPROVAL_ACTIONS=10
+RATE_LIMIT_MAX_STATUS_CHECKS=30
+
+REDIS_URL=redis://localhost:6379/0
 ```
 
 ## Running Tests
@@ -255,8 +277,9 @@ Agent calls get_today_summary
 1. Real Daraja sandbox adapter
    - OAuth token management
    - STK push request signing
-   - transaction status query integration
-   - HTTP error handling and retries
+   - transaction status query submission
+   - HTTP error handling
+   - retries and production hardening
 
 2. PostgreSQL persistence
    - SQLAlchemy models

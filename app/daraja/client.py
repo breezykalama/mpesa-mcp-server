@@ -13,8 +13,10 @@ from pydantic import BaseModel
 from app.config import Settings
 
 SAFARICOM_SANDBOX_BASE_URL = "https://sandbox.safaricom.co.ke"
+SAFARICOM_PRODUCTION_BASE_URL = "https://api.safaricom.co.ke"
 OAUTH_TOKEN_PATH = "/oauth/v1/generate"
 STK_PUSH_PATH = "/mpesa/stkpush/v1/processrequest"
+TRANSACTION_STATUS_PATH = "/mpesa/transactionstatus/v1/query"
 
 
 class StkPushResponse(BaseModel):
@@ -136,13 +138,47 @@ class RealDarajaClient:
         )
 
     def check_transaction_status(self, checkout_request_id: str) -> TransactionStatusResponse:
-        """Return a safe placeholder until Daraja status integration is implemented."""
+        """Submit a Safaricom Daraja sandbox transaction status query."""
+
+        payload = self._transaction_status_payload(checkout_request_id)
+
+        try:
+            token = self._get_oauth_token()
+            response = self._http_client.post(
+                f"{self._base_url}{TRANSACTION_STATUS_PATH}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+            response.raise_for_status()
+            response_payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            return self._failed_transaction_status_response(
+                checkout_request_id,
+                self._http_error_description(exc),
+            )
+        except httpx.HTTPError as exc:
+            return self._failed_transaction_status_response(
+                checkout_request_id,
+                f"Daraja transaction status request failed: {exc}",
+            )
+        except ValueError:
+            return self._failed_transaction_status_response(
+                checkout_request_id,
+                "Daraja transaction status response was not valid JSON.",
+            )
+
+        response_code = str(response_payload.get("ResponseCode", ""))
+        response_description = str(
+            response_payload.get("ResponseDescription")
+            or response_payload.get("errorMessage")
+            or "Daraja transaction status query failed."
+        )
 
         return TransactionStatusResponse(
             checkout_request_id=checkout_request_id,
-            result_code="PENDING_INTEGRATION",
-            result_description="Real Daraja transaction status integration is not implemented yet.",
-            status="unknown",
+            result_code=response_code,
+            result_description=response_description,
+            status="query_accepted" if response_code == "0" else "failed",
         )
 
     def _get_oauth_token(self) -> str:
@@ -167,6 +203,49 @@ class RealDarajaClient:
             + timestamp
         )
         return base64.b64encode(raw_password.encode("utf-8")).decode("utf-8")
+
+    def _transaction_status_payload(self, checkout_request_id: str) -> dict[str, str | int]:
+        # TODO: Daraja Transaction Status expects an M-Pesa transaction ID or suitable
+        # Daraja transaction reference. For compatibility, this method currently accepts
+        # the existing checkout_request_id argument and sends it as TransactionID.
+        return {
+            "Initiator": self._required_setting("daraja_initiator_name"),
+            "SecurityCredential": self._required_setting("daraja_security_credential"),
+            "CommandID": "TransactionStatusQuery",
+            "TransactionID": checkout_request_id,
+            "PartyA": self._required_setting("daraja_shortcode"),
+            "IdentifierType": self._settings.daraja_identifier_type,
+            "ResultURL": self._required_setting("daraja_transaction_status_result_url"),
+            "QueueTimeOutURL": self._required_setting(
+                "daraja_transaction_status_timeout_url"
+            ),
+            "Remarks": self._settings.daraja_transaction_status_remarks,
+            "Occasion": self._settings.daraja_transaction_status_occasion,
+        }
+
+    def _failed_transaction_status_response(
+        self,
+        checkout_request_id: str,
+        reason: str,
+    ) -> TransactionStatusResponse:
+        return TransactionStatusResponse(
+            checkout_request_id=checkout_request_id,
+            result_code="FAILED",
+            result_description=reason,
+            status="failed",
+        )
+
+    def _http_error_description(self, exc: httpx.HTTPStatusError) -> str:
+        try:
+            payload = exc.response.json()
+        except ValueError:
+            return f"Daraja transaction status request failed: {exc}"
+
+        error_message = payload.get("errorMessage")
+        if isinstance(error_message, str) and error_message != "":
+            return error_message
+
+        return f"Daraja transaction status request failed: {exc}"
 
     def _required_setting(self, name: str) -> str:
         value = getattr(self._settings, name)

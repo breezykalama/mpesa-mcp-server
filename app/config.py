@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     daraja_passkey: str | None = None
     daraja_shortcode: str | None = None
     daraja_callback_url: str | None = None
+    daraja_initiator_name: str | None = None
+    daraja_security_credential: str | None = None
+    daraja_transaction_status_result_url: str | None = None
+    daraja_transaction_status_timeout_url: str | None = None
+    daraja_identifier_type: int = 4
+    daraja_transaction_status_remarks: str = "Transaction status query"
+    daraja_transaction_status_occasion: str = "Mpesa MCP status check"
     callback_shared_secret: str | None = None
     max_stk_amount: int = 10000
     rate_limit_enabled: bool = True
