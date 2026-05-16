@@ -30,7 +30,7 @@ uv run python scripts/smoke_mcp_tools.py
 docker compose up --build
 ```
 
-The smoke script runs fully in memory with mock Daraja behavior. Docker Compose starts FastAPI, PostgreSQL, and Redis in mock payment mode.
+The smoke script runs fully in memory and now demonstrates the legacy M-Pesa flow, generic Daraja-backed payment tools, and the mock Airtel Money rail. Docker Compose starts FastAPI, PostgreSQL, and Redis in mock payment mode.
 
 ## Project Purpose
 
@@ -327,7 +327,13 @@ To see the tool flow without Docker, credentials, or a running MCP client, run:
 uv run python scripts/smoke_mcp_tools.py
 ```
 
-The script uses `AppContainer` in mock mode and calls the MCP tool wrappers directly. It demonstrates safe STK Push initiation, transaction status checking, callback simulation, receipt generation, today's summary, approval-required handling, and approval execution.
+The script uses `AppContainer` in mock mode and calls the MCP tool wrappers directly. It demonstrates:
+
+- legacy `initiate_stk_push` and `check_transaction_status`
+- generic `initiate_payment` and `check_payment_status` with Daraja
+- generic `initiate_payment` and `check_payment_status` with `PAYMENT_PROVIDER=airtel_mock`
+- provider metadata: `provider`, `rail`, `provider_transaction_id`, `provider_reference`
+- callback simulation, receipt generation, analytics, approval workflow, and reconciliation
 
 ## Callback Route
 

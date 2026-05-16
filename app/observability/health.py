@@ -31,12 +31,14 @@ def readiness(container: Annotated[AppContainer, Depends(get_app_container)]) ->
         dependency is not None
         for dependency in (
             container.daraja_client,
+            container.payment_provider,
             container.transaction_repository,
             container.audit_logger,
             container.payment_service,
             container.transaction_service,
             container.receipt_service,
             container.analytics_service,
+            container.reconciliation_service,
         )
     )
 

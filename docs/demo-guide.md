@@ -215,7 +215,22 @@ For the fastest end-to-end demo, run the local smoke script:
 uv run python scripts/smoke_mcp_tools.py
 ```
 
-The script uses `AppContainer` with in-memory storage and `MockDarajaClient`. It calls the MCP tool wrapper functions directly and prints clean JSON for each step:
+The script uses `AppContainer` with in-memory storage and mock providers. It calls the MCP tool wrapper functions directly and prints clean JSON for each step.
+
+The smoke output is grouped into:
+
+- `legacy_mpesa_flow`
+- `generic_daraja_flow`
+- `generic_airtel_mock_flow`
+
+The generic flows show provider metadata:
+
+- `provider`
+- `rail`
+- `provider_transaction_id`
+- `provider_reference`
+
+The legacy flow still demonstrates:
 
 - safe `initiate_stk_push`
 - `check_transaction_status`
@@ -224,6 +239,7 @@ The script uses `AppContainer` with in-memory storage and `MockDarajaClient`. It
 - `get_today_summary`
 - above-limit `initiate_stk_push` returning `approval_required`
 - `approve_payment_request` executing the approved payment once
+- `run_reconciliation`
 
 No Docker, Redis, PostgreSQL, Daraja credentials, or live network calls are required.
 
