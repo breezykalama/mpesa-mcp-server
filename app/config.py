@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     log_level: str = "INFO"
     log_format: str = "json"
+    operator_auth_enabled: bool = True
+    operator_viewer_token: str | None = None
+    operator_approver_token: str | None = None
+    operator_admin_token: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

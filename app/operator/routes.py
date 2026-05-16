@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.analytics.service import AnalyticsService
 from app.audit.repository import AuditRepositoryProtocol
+from app.auth.security import OperatorPrincipal, require_admin, require_viewer
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 from app.reconciliation.service import ReconciliationService
@@ -80,6 +81,7 @@ def list_transactions(
         TransactionRepositoryProtocol,
         Depends(get_transaction_repository),
     ],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, list[OperatorTransactionSummary]]:
     """List recent transactions for operator visibility."""
@@ -112,6 +114,7 @@ def get_transaction(
         TransactionRepositoryProtocol,
         Depends(get_transaction_repository),
     ],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
 ) -> PendingTransaction | JSONResponse:
     """Return transaction details."""
 
@@ -147,6 +150,7 @@ def get_transaction(
 @router.get("/audit-events")
 def list_audit_events(
     audit_repository: Annotated[AuditRepositoryProtocol, Depends(get_audit_repository)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, list[OperatorAuditEventSummary]]:
     """List recent audit events for operator visibility."""
@@ -173,6 +177,7 @@ def list_audit_events(
 @router.get("/analytics/today")
 def get_today_analytics(
     analytics_service: Annotated[AnalyticsService, Depends(get_analytics_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
 ) -> dict[str, object]:
     """Return today's analytics summary."""
 
@@ -190,6 +195,7 @@ def run_reconciliation(
         ReconciliationService,
         Depends(get_reconciliation_service),
     ],
+    _principal: Annotated[OperatorPrincipal, Depends(require_admin)],
 ) -> dict[str, object]:
     """Run a read-only reconciliation pass."""
 

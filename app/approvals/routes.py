@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.approvals.models import ApprovalRequest
 from app.approvals.service import ApprovalService, ApprovalServiceResponse
+from app.auth.security import OperatorPrincipal, require_approver
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 from app.services.payment_service import ApprovalExecutionResponse, PaymentService
@@ -38,6 +39,7 @@ def get_payment_service(
 @router.get("/pending", response_model=None)
 def list_pending_approvals(
     approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> dict[str, list[ApprovalRequest]]:
     """Return all pending approval requests."""
 
@@ -52,6 +54,7 @@ def list_pending_approvals(
 def get_approval(
     approval_id: str,
     approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalRequest | JSONResponse:
     """Return approval request details."""
 
@@ -82,6 +85,7 @@ def get_approval(
 def approve_payment_request(
     approval_id: str,
     payment_service: Annotated[PaymentService, Depends(get_payment_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalExecutionResponse | JSONResponse:
     """Approve and execute an approval request."""
 
@@ -104,6 +108,7 @@ def approve_payment_request(
 def reject_payment_request(
     approval_id: str,
     approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalServiceResponse | JSONResponse:
     """Reject an approval request."""
 

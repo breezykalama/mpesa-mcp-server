@@ -145,6 +145,7 @@ def build_operator_container(
         settings=Settings(
             database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
             callback_shared_secret=callback_shared_secret,
+            operator_auth_enabled=False,
         )
     )
 
