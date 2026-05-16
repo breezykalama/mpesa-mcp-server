@@ -591,7 +591,52 @@ For local-only development, `OPERATOR_AUTH_ENABLED=false` allows access with a s
 
 ### Minimal Operator Console UI
 
-The app also serves a tiny browser-based demo console:
+The preferred high-impact demo UI is the React dashboard in `frontend/`.
+
+Run the backend:
+
+```bash
+uv run python scripts/start_app.py
+```
+
+Run the frontend:
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+The React dashboard uses:
+
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- Axios
+- TanStack Query
+
+It includes:
+
+- login/token screen
+- dashboard overview
+- today's analytics cards
+- recent transactions table
+- pending approvals panel
+- recent audit events
+- reconciliation panel
+- system status panel
+
+It calls the existing backend APIs and sends `Authorization: Bearer <token>` using the token pasted by the operator. The token is stored only in browser `localStorage`.
+
+The FastAPI app also keeps the original tiny browser-based demo console:
 
 ```text
 GET /operator/ui
@@ -621,7 +666,7 @@ The UI calls the existing APIs:
 - `/approvals/{approval_id}/reject`
 - `/operator/reconciliation/run`
 
-It is useful for demos and reviewer walkthroughs, but it is not a production frontend.
+Both dashboards are useful for demos and reviewer walkthroughs, but neither is a production frontend yet.
 
 ### Approval Workflow
 
@@ -727,7 +772,7 @@ The demo does not:
 - initiate real M-Pesa payments
 - require live Daraja credentials
 - replace Safaricom production approval/compliance processes
-- provide a production dashboard UI
+- provide a production-hardened dashboard UI
 - generate PDF receipts
 
 It is a backend architecture MVP for safe AI-agent payment workflows.

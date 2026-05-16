@@ -22,6 +22,7 @@ The MVP demonstrates how an agent can request payment actions, check transaction
 - Reconciliation engine supported
 - Operator dashboard API supported
 - Lightweight operator auth/RBAC supported
+- React operator dashboard supported for demos
 - CI is green on GitHub Actions
 
 ## Quick Demo
@@ -212,24 +213,49 @@ When `OPERATOR_AUTH_ENABLED=false`, local development access uses a synthetic ad
 
 ## Operator Console UI
 
-The FastAPI app serves a minimal demo console at:
+The project includes two operator UI options.
+
+The polished demo dashboard lives in `frontend/` and uses Vite, React, TypeScript, Tailwind CSS, Axios, and TanStack Query.
+
+Run the backend:
+
+```bash
+uv run python scripts/start_app.py
+```
+
+Run the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+The dashboard reads `VITE_API_BASE_URL`, defaulting to `http://localhost:8000`. Operators paste a bearer token into the login screen; the token is stored only in browser `localStorage` and sent as `Authorization: Bearer <token>`.
+
+The dashboard includes:
+
+- login/token screen
+- today's analytics cards
+- recent transactions table
+- pending approvals with approve/reject actions
+- recent audit events
+- reconciliation panel
+- system status panel
+
+The FastAPI app still serves the original minimal HTML fallback at:
 
 ```text
 GET /operator/ui
 ```
 
-It is plain HTML, CSS, and vanilla JavaScript. There is no React app, no build step, and no frontend dependency chain.
-
-The console lets an operator paste a bearer token into the browser, stores it only in `localStorage`, and calls the existing operator and approval APIs:
-
-- today's analytics summary
-- recent transactions
-- pending approvals
-- approve/reject approval actions
-- recent audit events
-- reconciliation run
-
-This is a demo console for reviewing the backend workflow. It is not a production frontend.
+Both UIs are demo consoles for reviewing the backend workflow. They are not production frontends.
 
 ## Callback Security
 
@@ -400,6 +426,21 @@ http://localhost:8000/operator/ui
 
 Paste a configured operator token into the token field before loading protected data.
 
+To run the React operator dashboard instead:
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
 ## Running The MCP Server
 
 ```bash
@@ -513,7 +554,7 @@ Agent calls get_today_summary
    - configurable limits per environment or merchant
 
 5. Dashboard
-   - production frontend UI over existing operator APIs
+   - production hardening for the React operator dashboard
    - transaction monitoring
    - callback event timeline
    - daily revenue and failure summaries
