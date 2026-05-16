@@ -9,12 +9,15 @@ from app.config import Settings
 CURRENT_MCP_TOOLS = frozenset(
     {
         "initiate_stk_push",
+        "initiate_payment",
         "check_transaction_status",
+        "check_payment_status",
         "generate_receipt",
         "get_today_summary",
         "get_failed_transactions",
         "approve_payment_request",
         "reject_payment_request",
+        "run_reconciliation",
     }
 )
 

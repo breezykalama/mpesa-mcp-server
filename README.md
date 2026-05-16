@@ -109,7 +109,9 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 
 | Tool | Purpose | Current behavior |
 | --- | --- | --- |
+| `initiate_payment` | Start a provider-agnostic payment request | Uses the configured `PaymentProviderProtocol` implementation |
 | `initiate_stk_push` | Start an STK push request | Uses `MockDarajaClient`, saves a pending transaction in memory |
+| `check_payment_status` | Check provider transaction status | Uses the configured payment provider |
 | `check_transaction_status` | Check a transaction reference status | Uses mock mode by default; sandbox mode can submit a Daraja Transaction Status query |
 | `generate_receipt` | Generate a receipt for a completed transaction | Generates an in-memory structured receipt only for completed transactions |
 | `get_today_summary` | Show today's M-Pesa revenue summary | Counts in-memory transactions created today |
@@ -195,6 +197,17 @@ PAYMENT_PROVIDER=airtel_mock
 ```
 
 This mock provider does not call Airtel or require credentials. It exists to prove that transactions can be stored with provider-aware metadata such as `provider="airtel"` and `rail="airtel_money"` while preserving the current MCP tool contract. A future generic payment tool can be added without rewriting the payment service.
+
+The MCP server now exposes both legacy M-Pesa-specific tools and provider-agnostic tools:
+
+- Legacy compatibility:
+  - `initiate_stk_push`
+  - `check_transaction_status`
+- Generic multi-rail tools:
+  - `initiate_payment`
+  - `check_payment_status`
+
+The generic tools call the same service layer and honor the same policy, rate limit, approval, idempotency, audit, and provider configuration controls.
 
 ## Setup
 

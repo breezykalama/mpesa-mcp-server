@@ -12,10 +12,12 @@ from app.bootstrap.container import AppContainer, create_app_container
 from app.logging.config import configure_logging
 from app.mcp.tools import (
     approve_payment_request_tool,
+    check_payment_status_tool,
     check_transaction_status_tool,
     generate_receipt_tool,
     get_failed_transactions_tool,
     get_today_summary_tool,
+    initiate_payment_tool,
     initiate_stk_push_tool,
     reject_payment_request_tool,
     run_reconciliation_tool,
@@ -24,7 +26,9 @@ from app.mcp.tools import (
 MCP_SERVER_NAME = "mpesa-mcp-server"
 REGISTERED_TOOL_NAMES = (
     "initiate_stk_push",
+    "initiate_payment",
     "check_transaction_status",
+    "check_payment_status",
     "generate_receipt",
     "get_today_summary",
     "get_failed_transactions",
@@ -80,6 +84,42 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
     def check_transaction_status(checkout_request_id: str) -> dict[str, Any]:
         response = check_transaction_status_tool(
             {"checkout_request_id": checkout_request_id},
+            container.transaction_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_status_checks,
+            tool_policy=container.tool_policy,
+        )
+        return response.model_dump(mode="json")
+
+    def initiate_payment(
+        phone_number: str,
+        amount: int,
+        account_reference: str,
+        description: str,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        response = initiate_payment_tool(
+            {
+                "phone_number": phone_number,
+                "amount": amount,
+                "account_reference": account_reference,
+                "description": description,
+                "idempotency_key": idempotency_key,
+            },
+            container.payment_service,
+            rate_limiter=container.rate_limiter,
+            rate_limit_enabled=container.settings.rate_limit_enabled,
+            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
+            rate_limit_max_requests=container.settings.rate_limit_max_stk_push,
+            tool_policy=container.tool_policy,
+        )
+        return response.model_dump(mode="json")
+
+    def check_payment_status(provider_transaction_id: str) -> dict[str, Any]:
+        response = check_payment_status_tool(
+            {"provider_transaction_id": provider_transaction_id},
             container.transaction_service,
             rate_limiter=container.rate_limiter,
             rate_limit_enabled=container.settings.rate_limit_enabled,
@@ -147,7 +187,9 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
 
     return {
         "initiate_stk_push": initiate_stk_push,
+        "initiate_payment": initiate_payment,
         "check_transaction_status": check_transaction_status,
+        "check_payment_status": check_payment_status,
         "generate_receipt": generate_receipt,
         "get_today_summary": get_today_summary,
         "get_failed_transactions": get_failed_transactions,

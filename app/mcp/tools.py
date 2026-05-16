@@ -13,10 +13,12 @@ from app.analytics.service import DailyAnalyticsSummary
 from app.approvals.service import ApprovalServiceResponse
 from app.mcp.schemas import (
     ApprovePaymentRequestInput,
+    CheckPaymentStatusInput,
     CheckTransactionStatusInput,
     GenerateReceiptInput,
     GetFailedTransactionsInput,
     GetTodaySummaryInput,
+    InitiatePaymentInput,
     InitiateStkPushInput,
     McpToolResponse,
     RejectPaymentRequestInput,
@@ -121,7 +123,11 @@ def initiate_stk_push_tool(
     rate_limit_max_requests: int = 5,
     tool_policy: ToolPolicyEngine | None = None,
 ) -> McpToolResponse:
-    """Validate MCP input and delegate STK push initiation to the payment service."""
+    """Validate MCP input and delegate payment initiation to the payment service.
+
+    The public MCP tool remains M-Pesa-first for compatibility. The service layer
+    delegates to the configured payment provider, which can be Daraja or another rail.
+    """
 
     policy_response = _check_tool_policy("initiate_stk_push", tool_policy)
     if policy_response is not None:
@@ -150,6 +156,66 @@ def initiate_stk_push_tool(
         return rate_limit_response
 
     _log_tool_event("initiate_stk_push", "mcp_tool_delegated")
+    payment_response = payment_service.initiate_stk_push(
+        phone_number=tool_input.phone_number,
+        amount=tool_input.amount,
+        account_reference=tool_input.account_reference,
+        description=tool_input.description,
+        idempotency_key=tool_input.idempotency_key,
+    )
+
+    return McpToolResponse(
+        status=payment_response.status,
+        allowed=payment_response.allowed,
+        reason=payment_response.reason,
+        requires_approval=payment_response.requires_approval,
+        data=payment_response.model_dump(
+            exclude={"status", "allowed", "reason", "requires_approval"},
+            exclude_none=True,
+        ),
+    )
+
+
+@with_correlation_context
+def initiate_payment_tool(
+    input_data: InitiatePaymentInput | dict[str, Any],
+    payment_service: InitiateStkPushServiceProtocol,
+    *,
+    rate_limiter: RateLimiterProtocol | None = None,
+    rate_limit_enabled: bool = False,
+    rate_limit_window_seconds: int = 60,
+    rate_limit_max_requests: int = 5,
+    tool_policy: ToolPolicyEngine | None = None,
+) -> McpToolResponse:
+    """Validate MCP input and delegate generic payment initiation to the service."""
+
+    policy_response = _check_tool_policy("initiate_payment", tool_policy)
+    if policy_response is not None:
+        return policy_response
+
+    try:
+        tool_input = _validate_initiate_payment_input(input_data)
+    except ValidationError as exc:
+        _log_tool_event("initiate_payment", "mcp_tool_invalid_input")
+        return McpToolResponse(
+            status="invalid_input",
+            allowed=False,
+            reason="Invalid initiate_payment input.",
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    rate_limit_response = _check_rate_limit(
+        rate_limiter=rate_limiter,
+        enabled=rate_limit_enabled,
+        key=f"initiate_payment:{tool_input.phone_number}",
+        limit=rate_limit_max_requests,
+        window_seconds=rate_limit_window_seconds,
+    )
+    if rate_limit_response is not None:
+        _log_tool_event("initiate_payment", "mcp_tool_rate_limited", status="rate_limited")
+        return rate_limit_response
+
+    _log_tool_event("initiate_payment", "mcp_tool_delegated")
     payment_response = payment_service.initiate_stk_push(
         phone_number=tool_input.phone_number,
         amount=tool_input.amount,
@@ -216,6 +282,66 @@ def check_transaction_status_tool(
     _log_tool_event("check_transaction_status", "mcp_tool_delegated")
     transaction_response = transaction_service.check_transaction_status(
         tool_input.checkout_request_id
+    )
+
+    return McpToolResponse(
+        status=transaction_response.status,
+        allowed=transaction_response.allowed,
+        reason=transaction_response.reason,
+        data=transaction_response.model_dump(
+            exclude={"status", "allowed", "reason", "errors"},
+            exclude_none=True,
+        ),
+        errors=transaction_response.errors,
+    )
+
+
+@with_correlation_context
+def check_payment_status_tool(
+    input_data: CheckPaymentStatusInput | dict[str, Any],
+    transaction_service: CheckTransactionStatusServiceProtocol,
+    *,
+    rate_limiter: RateLimiterProtocol | None = None,
+    rate_limit_enabled: bool = False,
+    rate_limit_window_seconds: int = 60,
+    rate_limit_max_requests: int = 30,
+    tool_policy: ToolPolicyEngine | None = None,
+) -> McpToolResponse:
+    """Validate MCP input and delegate generic payment status checks to the service."""
+
+    policy_response = _check_tool_policy("check_payment_status", tool_policy)
+    if policy_response is not None:
+        return policy_response
+
+    try:
+        tool_input = _validate_check_payment_status_input(input_data)
+    except ValidationError as exc:
+        _log_tool_event("check_payment_status", "mcp_tool_invalid_input")
+        return McpToolResponse(
+            status="invalid_input",
+            allowed=False,
+            reason="Invalid check_payment_status input.",
+            errors=[error["msg"] for error in exc.errors()],
+        )
+
+    rate_limit_response = _check_rate_limit(
+        rate_limiter=rate_limiter,
+        enabled=rate_limit_enabled,
+        key=f"check_payment_status:{tool_input.provider_transaction_id}",
+        limit=rate_limit_max_requests,
+        window_seconds=rate_limit_window_seconds,
+    )
+    if rate_limit_response is not None:
+        _log_tool_event(
+            "check_payment_status",
+            "mcp_tool_rate_limited",
+            status="rate_limited",
+        )
+        return rate_limit_response
+
+    _log_tool_event("check_payment_status", "mcp_tool_delegated")
+    transaction_response = transaction_service.check_transaction_status(
+        tool_input.provider_transaction_id
     )
 
     return McpToolResponse(
@@ -479,6 +605,15 @@ def _validate_input(input_data: InitiateStkPushInput | dict[str, Any]) -> Initia
     return InitiateStkPushInput.model_validate(input_data)
 
 
+def _validate_initiate_payment_input(
+    input_data: InitiatePaymentInput | dict[str, Any],
+) -> InitiatePaymentInput:
+    if isinstance(input_data, InitiatePaymentInput):
+        return input_data
+
+    return InitiatePaymentInput.model_validate(input_data)
+
+
 def _validate_transaction_status_input(
     input_data: CheckTransactionStatusInput | dict[str, Any],
 ) -> CheckTransactionStatusInput:
@@ -486,6 +621,15 @@ def _validate_transaction_status_input(
         return input_data
 
     return CheckTransactionStatusInput.model_validate(input_data)
+
+
+def _validate_check_payment_status_input(
+    input_data: CheckPaymentStatusInput | dict[str, Any],
+) -> CheckPaymentStatusInput:
+    if isinstance(input_data, CheckPaymentStatusInput):
+        return input_data
+
+    return CheckPaymentStatusInput.model_validate(input_data)
 
 
 def _validate_generate_receipt_input(

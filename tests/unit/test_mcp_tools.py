@@ -5,8 +5,10 @@ from __future__ import annotations
 from app.approvals.repository import InMemoryApprovalRepository
 from app.approvals.service import ApprovalService
 from app.audit.logger import InMemoryAuditLogger
+from app.bootstrap.container import AppContainer
+from app.config import Settings
 from app.daraja.client import MockDarajaClient
-from app.mcp.tools import initiate_stk_push_tool
+from app.mcp.tools import initiate_payment_tool, initiate_stk_push_tool
 from app.observability.metrics import InMemoryMetricsRecorder
 from app.payments.providers import DarajaPaymentProvider
 from app.policy.tool_policy import ToolPolicyEngine
@@ -75,6 +77,57 @@ def test_successful_stk_push_response() -> None:
     assert response.allowed is True
     assert response.data["transaction_id"] is not None
     assert response.data["checkout_request_id"] is not None
+
+
+def test_generic_payment_tool_works_with_daraja() -> None:
+    container = AppContainer.mock()
+
+    response = initiate_payment_tool(
+        {
+            "phone_number": "254700000000",
+            "amount": 1_000,
+            "account_reference": "INV-GENERIC-001",
+            "description": "Invoice payment",
+        },
+        container.payment_service,
+    )
+
+    assert response.status == "pending"
+    assert response.allowed is True
+    transaction = container.transaction_repository.get_transaction(
+        response.data["transaction_id"]
+    )
+    assert transaction is not None
+    assert transaction.provider == "daraja"
+    assert transaction.rail == "mpesa"
+
+
+def test_generic_payment_tool_works_with_airtel_mock() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+            payment_provider="airtel_mock",
+        )
+    )
+
+    response = initiate_payment_tool(
+        {
+            "phone_number": "254700000000",
+            "amount": 1_000,
+            "account_reference": "INV-AIRTEL-GENERIC-001",
+            "description": "Invoice payment",
+        },
+        container.payment_service,
+    )
+
+    assert response.status == "pending"
+    assert response.allowed is True
+    transaction = container.transaction_repository.get_transaction(
+        response.data["transaction_id"]
+    )
+    assert transaction is not None
+    assert transaction.provider == "airtel"
+    assert transaction.rail == "airtel_money"
 
 
 def test_approval_required_response() -> None:

@@ -17,10 +17,26 @@ class InitiateStkPushInput(BaseModel):
     idempotency_key: str | None = None
 
 
+class InitiatePaymentInput(BaseModel):
+    """Input schema for the provider-agnostic initiate_payment MCP tool."""
+
+    phone_number: str
+    amount: int
+    account_reference: str
+    description: str
+    idempotency_key: str | None = None
+
+
 class CheckTransactionStatusInput(BaseModel):
     """Input schema for the check_transaction_status MCP tool."""
 
     checkout_request_id: str
+
+
+class CheckPaymentStatusInput(BaseModel):
+    """Input schema for the provider-agnostic check_payment_status MCP tool."""
+
+    provider_transaction_id: str
 
 
 class GenerateReceiptInput(BaseModel):

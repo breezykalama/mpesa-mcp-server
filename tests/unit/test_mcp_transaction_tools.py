@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.mcp.tools import check_transaction_status_tool
+from app.mcp.tools import check_payment_status_tool, check_transaction_status_tool
 from app.services.transaction_service import TransactionStatusServiceResponse
 
 
@@ -41,6 +41,20 @@ def test_mcp_status_tool_success_response() -> None:
     assert response.allowed is True
     assert response.data["checkout_request_id"] == "ws_CO_123"
     assert response.data["result_code"] == "0"
+
+
+def test_generic_payment_status_tool_success_response() -> None:
+    service = RecordingTransactionService()
+
+    response = check_payment_status_tool(
+        {"provider_transaction_id": "provider_txn_123"},
+        service,
+    )
+
+    assert response.status == "completed"
+    assert response.allowed is True
+    assert response.data["checkout_request_id"] == "provider_txn_123"
+    assert service.checkout_request_id == "provider_txn_123"
 
 
 def test_mcp_status_tool_invalid_input_handled_cleanly() -> None:

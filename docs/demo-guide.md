@@ -200,7 +200,12 @@ The Airtel provider is mock-only. It returns fake Airtel transaction IDs and sto
 }
 ```
 
-The MCP tool remains `initiate_stk_push` for compatibility with the current M-Pesa-first demo, but the service layer now supports provider-aware transaction records and can be extended with future generic payment tools.
+The legacy MCP tool `initiate_stk_push` remains available for compatibility with the current M-Pesa-first demo. The MCP server also exposes generic multi-rail tools:
+
+- `initiate_payment`
+- `check_payment_status`
+
+The generic tools use the same `PaymentService`, `TransactionService`, provider abstraction, idempotency, rate limiting, approval workflow, audit logging, and governance controls.
 
 ## Local MCP Smoke Script
 

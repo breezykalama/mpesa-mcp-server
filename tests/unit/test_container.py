@@ -63,7 +63,9 @@ def test_mcp_server_uses_container() -> None:
     assert response["status"] == "pending"
     assert set(list_registered_tool_names(server)) == {
         "initiate_stk_push",
+        "initiate_payment",
         "check_transaction_status",
+        "check_payment_status",
         "generate_receipt",
         "get_today_summary",
         "get_failed_transactions",
