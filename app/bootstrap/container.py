@@ -89,7 +89,10 @@ class AppContainer:
         payment_provider = cls._create_payment_provider(resolved_settings, daraja_client)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
         receipt_generator = ReceiptGenerator()
-        approval_service = ApprovalService(approval_repository=approval_repository)
+        approval_service = ApprovalService(
+            approval_repository=approval_repository,
+            audit_logger=audit_logger,
+        )
 
         return cls(
             settings=resolved_settings,

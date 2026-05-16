@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.approvals.models import ApprovalRequest
 from app.approvals.repository import ApprovalRepositoryProtocol
+from app.audit.logger import AuditLoggerProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,14 @@ class ApprovalServiceResponse(BaseModel):
 class ApprovalService:
     """Coordinate approval request lifecycle."""
 
-    def __init__(self, *, approval_repository: ApprovalRepositoryProtocol) -> None:
+    def __init__(
+        self,
+        *,
+        approval_repository: ApprovalRepositoryProtocol,
+        audit_logger: AuditLoggerProtocol | None = None,
+    ) -> None:
         self._approval_repository = approval_repository
+        self._audit_logger = audit_logger
 
     def create_approval_request(
         self,
@@ -48,6 +55,15 @@ class ApprovalService:
                 "event_type": "approval_created",
                 "approval_id": approval.approval_id,
                 "status": approval.status,
+            },
+        )
+        self._log_audit_event(
+            "approval_created",
+            {
+                "approval_id": approval.approval_id,
+                "action": approval.action,
+                "status": approval.status,
+                "reason": approval.reason,
             },
         )
         return approval
@@ -79,6 +95,14 @@ class ApprovalService:
             extra={
                 "event_type": "approval_approved",
                 "approval_id": approval_id,
+                "status": approval.status,
+            },
+        )
+        self._log_audit_event(
+            "approval_approved",
+            {
+                "approval_id": approval_id,
+                "action": approval.action,
                 "status": approval.status,
             },
         )
@@ -119,6 +143,14 @@ class ApprovalService:
                 "status": approval.status,
             },
         )
+        self._log_audit_event(
+            "approval_rejected",
+            {
+                "approval_id": approval_id,
+                "action": approval.action,
+                "status": approval.status,
+            },
+        )
         return ApprovalServiceResponse(
             status="rejected",
             allowed=False,
@@ -130,3 +162,18 @@ class ApprovalService:
         """Return an approval request by ID."""
 
         return self._approval_repository.get(approval_id)
+
+    def list_pending_requests(self) -> list[ApprovalRequest]:
+        """Return pending approval requests."""
+
+        return self._approval_repository.list_pending()
+
+    def _log_audit_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self._audit_logger is None:
+            return
+
+        self._audit_logger.log_event(
+            event_type,
+            payload,
+            actor="operator",
+        )

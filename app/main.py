@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 
+from app.approvals.routes import router as approval_router
 from app.callbacks.routes import router as callback_router
 from app.config import get_settings
 from app.logging.config import configure_logging
@@ -46,4 +47,5 @@ async def correlation_id_middleware(
 
 
 app.include_router(callback_router)
+app.include_router(approval_router)
 app.include_router(observability_router)

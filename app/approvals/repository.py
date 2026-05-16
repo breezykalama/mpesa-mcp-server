@@ -24,6 +24,9 @@ class ApprovalRepositoryProtocol(Protocol):
     def get(self, approval_id: str) -> ApprovalRequest | None:
         """Return an approval request by ID."""
 
+    def list_pending(self) -> list[ApprovalRequest]:
+        """Return pending approval requests."""
+
     def update_status(
         self,
         *,
@@ -61,6 +64,15 @@ class InMemoryApprovalRepository:
         """Return an approval request by ID."""
 
         return self._approvals.get(approval_id)
+
+    def list_pending(self) -> list[ApprovalRequest]:
+        """Return pending approval requests."""
+
+        return [
+            approval
+            for approval in self._approvals.values()
+            if approval.status == "pending"
+        ]
 
     def update_status(
         self,
