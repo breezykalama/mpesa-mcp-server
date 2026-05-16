@@ -556,6 +556,7 @@ GET  /operator/transactions/{id}         viewer+
 GET  /operator/audit-events              viewer+
 GET  /operator/analytics/today           viewer+
 POST /operator/reconciliation/run        admin
+GET  /operator/ui                        browser console
 
 GET  /approvals/pending                  approver+
 GET  /approvals/{approval_id}            approver+
@@ -587,6 +588,40 @@ Insufficient role access returns:
 ```
 
 For local-only development, `OPERATOR_AUTH_ENABLED=false` allows access with a synthetic admin principal.
+
+### Minimal Operator Console UI
+
+The app also serves a tiny browser-based demo console:
+
+```text
+GET /operator/ui
+```
+
+Open it locally:
+
+```text
+http://localhost:8000/operator/ui
+```
+
+The console is intentionally simple:
+
+- plain HTML, CSS, and vanilla JavaScript
+- no React
+- no build system
+- no hardcoded tokens
+- token is pasted by the user and stored only in browser `localStorage`
+
+The UI calls the existing APIs:
+
+- `/operator/analytics/today`
+- `/operator/transactions`
+- `/operator/audit-events`
+- `/approvals/pending`
+- `/approvals/{approval_id}/approve`
+- `/approvals/{approval_id}/reject`
+- `/operator/reconciliation/run`
+
+It is useful for demos and reviewer walkthroughs, but it is not a production frontend.
 
 ### Approval Workflow
 
@@ -692,7 +727,7 @@ The demo does not:
 - initiate real M-Pesa payments
 - require live Daraja credentials
 - replace Safaricom production approval/compliance processes
-- provide a dashboard UI yet
+- provide a production dashboard UI
 - generate PDF receipts
 
 It is a backend architecture MVP for safe AI-agent payment workflows.

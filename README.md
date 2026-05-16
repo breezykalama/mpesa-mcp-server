@@ -187,6 +187,7 @@ Protected endpoints:
 - `GET /operator/audit-events` requires `viewer+`
 - `GET /operator/analytics/today` requires `viewer+`
 - `POST /operator/reconciliation/run` requires `admin`
+- `GET /operator/ui` serves the minimal browser console
 - `GET /approvals/pending` requires `approver+`
 - `GET /approvals/{approval_id}` requires `approver+`
 - `POST /approvals/{approval_id}/approve` requires `approver+`
@@ -208,6 +209,27 @@ Authorization: Bearer <operator-token>
 ```
 
 When `OPERATOR_AUTH_ENABLED=false`, local development access uses a synthetic admin principal. Raw tokens are never logged.
+
+## Operator Console UI
+
+The FastAPI app serves a minimal demo console at:
+
+```text
+GET /operator/ui
+```
+
+It is plain HTML, CSS, and vanilla JavaScript. There is no React app, no build step, and no frontend dependency chain.
+
+The console lets an operator paste a bearer token into the browser, stores it only in `localStorage`, and calls the existing operator and approval APIs:
+
+- today's analytics summary
+- recent transactions
+- pending approvals
+- approve/reject approval actions
+- recent audit events
+- reconciliation run
+
+This is a demo console for reviewing the backend workflow. It is not a production frontend.
 
 ## Callback Security
 
@@ -370,6 +392,14 @@ Expected response:
 
 The app service uses `STORAGE_MODE=postgres`, `RATE_LIMIT_MODE=redis`, and `DARAJA_MODE=mock` by default. The MCP server remains optional and can still be started separately with `uv run python scripts/run_mcp_server.py`.
 
+To open the demo operator console:
+
+```text
+http://localhost:8000/operator/ui
+```
+
+Paste a configured operator token into the token field before loading protected data.
+
 ## Running The MCP Server
 
 ```bash
@@ -483,7 +513,7 @@ Agent calls get_today_summary
    - configurable limits per environment or merchant
 
 5. Dashboard
-   - frontend UI over existing operator APIs
+   - production frontend UI over existing operator APIs
    - transaction monitoring
    - callback event timeline
    - daily revenue and failure summaries
