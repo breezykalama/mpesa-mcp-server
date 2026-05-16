@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.logging.config import configure_logging
 from app.observability.health import router as observability_router
 from app.observability.tracing import CORRELATION_ID_HEADER, correlation_context
+from app.operator.routes import router as operator_router
 
 logger = logging.getLogger(__name__)
 
@@ -48,4 +49,5 @@ async def correlation_id_middleware(
 
 app.include_router(callback_router)
 app.include_router(approval_router)
+app.include_router(operator_router)
 app.include_router(observability_router)

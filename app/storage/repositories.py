@@ -79,6 +79,9 @@ class TransactionRepositoryProtocol(Protocol):
     def list_transactions(self) -> list[PendingTransaction]:
         """Return all transactions."""
 
+    def list_recent_transactions(self, limit: int = 50) -> list[PendingTransaction]:
+        """Return recent transactions."""
+
     def list_transactions_by_status(self, status: str) -> list[PendingTransaction]:
         """Return transactions matching a status."""
 
@@ -186,6 +189,15 @@ class InMemoryTransactionRepository:
         """Return all transactions."""
 
         return list(self._transactions.values())
+
+    def list_recent_transactions(self, limit: int = 50) -> list[PendingTransaction]:
+        """Return recent transactions."""
+
+        return sorted(
+            self._transactions.values(),
+            key=lambda transaction: transaction.created_at,
+            reverse=True,
+        )[:limit]
 
     def list_transactions_by_status(self, status: str) -> list[PendingTransaction]:
         """Return transactions matching a status."""
@@ -315,6 +327,17 @@ class PostgresTransactionRepository:
 
         with self._session_factory() as session:
             models = session.scalars(select(TransactionModel)).all()
+            return [self._to_pending_transaction(model) for model in models]
+
+    def list_recent_transactions(self, limit: int = 50) -> list[PendingTransaction]:
+        """Return recent transactions."""
+
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(TransactionModel)
+                .order_by(TransactionModel.created_at.desc())
+                .limit(limit)
+            ).all()
             return [self._to_pending_transaction(model) for model in models]
 
     def list_transactions_by_status(self, status: str) -> list[PendingTransaction]:

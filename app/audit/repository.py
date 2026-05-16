@@ -40,6 +40,9 @@ class AuditRepositoryProtocol(Protocol):
     def list_events(self) -> list[AuditEvent]:
         """Return all audit events."""
 
+    def list_recent_events(self, limit: int = 50) -> list[AuditEvent]:
+        """Return recent audit events."""
+
 
 class InMemoryAuditRepository:
     """In-memory audit repository."""
@@ -71,6 +74,15 @@ class InMemoryAuditRepository:
         """Return all audit events."""
 
         return list(self._events)
+
+    def list_recent_events(self, limit: int = 50) -> list[AuditEvent]:
+        """Return recent audit events."""
+
+        return sorted(
+            self._events,
+            key=lambda event: event.created_at,
+            reverse=True,
+        )[:limit]
 
 
 class PostgresAuditRepository:
@@ -108,6 +120,17 @@ class PostgresAuditRepository:
 
         with self._session_factory() as session:
             models = session.scalars(select(AuditEventModel)).all()
+            return [self._to_audit_event(model) for model in models]
+
+    def list_recent_events(self, limit: int = 50) -> list[AuditEvent]:
+        """Return recent audit events."""
+
+        with self._session_factory() as session:
+            models = session.scalars(
+                select(AuditEventModel)
+                .order_by(AuditEventModel.created_at.desc())
+                .limit(limit)
+            ).all()
             return [self._to_audit_event(model) for model in models]
 
     def _to_audit_event(self, model: AuditEventModel) -> AuditEvent:
