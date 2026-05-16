@@ -19,6 +19,9 @@ The MVP demonstrates how an agent can request payment actions, check transaction
 - Mock Airtel Money provider demonstrates multi-rail architecture
 - PostgreSQL persistence supported
 - Redis-backed rate limiting supported
+- Reconciliation engine supported
+- Operator dashboard API supported
+- Lightweight operator auth/RBAC supported
 - CI is green on GitHub Actions
 
 ## Quick Demo
@@ -54,8 +57,8 @@ It does not currently:
 
 - enable production Safaricom Daraja mode
 - cryptographically verify callback signatures or source IPs
-- execute a full human approval workflow with identity, expiry, and reviewer controls
-- provide merchant settlement, reconciliation, refunds, chargebacks, or compliance workflows
+- provide enterprise-grade approval controls such as expiry, multi-reviewer rules, or SSO
+- provide merchant settlement, refunds, chargebacks, or compliance workflows
 - generate legal/tax-compliant PDF receipts
 
 Instead, it is a controlled MCP-first backend skeleton that shows how those concerns can be introduced behind explicit interfaces.
@@ -80,6 +83,7 @@ app/services/
   - TransactionService
   - ReceiptService
   - AnalyticsService
+  - ReconciliationService
         |
         +-------------------+
         |                   |
@@ -90,8 +94,18 @@ app/safety/            app/receipts/
         |
         v
 Interfaces / Adapters
-app/daraja/     app/storage/       app/audit/
-  - Mock client   - In-memory repo   - In-memory audit log
+app/payments/   app/storage/       app/audit/
+  - Daraja rail   - In-memory repo   - Structured audit repo
+  - Airtel mock   - PostgreSQL repo
+
+FastAPI Operator Routes
+app/operator/routes.py
+app/approvals/routes.py
+        |
+        +--> Bearer token auth + RBAC
+        |
+        v
+Operator Dashboard / Approval API
 
 FastAPI Callback Route
 app/callbacks/routes.py
@@ -118,6 +132,7 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 | `get_failed_transactions` | Show failed transactions | Returns in-memory transactions with `failed` status |
 | `approve_payment_request` | Approve a pending risky payment request | Marks approval as approved and executes the original STK push once |
 | `reject_payment_request` | Reject a pending risky payment request | Marks approval as rejected without initiating Daraja |
+| `run_reconciliation` | Detect local/provider transaction mismatches | Read-only reconciliation summary with detailed findings |
 
 ## Safety Rules
 
@@ -154,6 +169,45 @@ Key safeguards include:
 - **Structured logs:** operational logs are JSON by default and avoid known secret fields.
 
 These controls are intentionally modular so memory-backed demo components can be replaced with Redis, PostgreSQL, and real Daraja adapters without rewriting the service layer.
+
+## Operator Security
+
+Operator and approval HTTP endpoints are protected with lightweight bearer-token authentication and role-based access control.
+
+Roles:
+
+- `viewer`: can read operator dashboard endpoints
+- `approver`: can read operator endpoints and approve or reject payment approvals
+- `admin`: can access everything, including reconciliation runs
+
+Protected endpoints:
+
+- `GET /operator/transactions` requires `viewer+`
+- `GET /operator/transactions/{transaction_id}` requires `viewer+`
+- `GET /operator/audit-events` requires `viewer+`
+- `GET /operator/analytics/today` requires `viewer+`
+- `POST /operator/reconciliation/run` requires `admin`
+- `GET /approvals/pending` requires `approver+`
+- `GET /approvals/{approval_id}` requires `approver+`
+- `POST /approvals/{approval_id}/approve` requires `approver+`
+- `POST /approvals/{approval_id}/reject` requires `approver+`
+
+Configure local tokens with:
+
+```env
+OPERATOR_AUTH_ENABLED=true
+OPERATOR_VIEWER_TOKEN=
+OPERATOR_APPROVER_TOKEN=
+OPERATOR_ADMIN_TOKEN=
+```
+
+Requests use:
+
+```text
+Authorization: Bearer <operator-token>
+```
+
+When `OPERATOR_AUTH_ENABLED=false`, local development access uses a synthetic admin principal. Raw tokens are never logged.
 
 ## Callback Security
 
@@ -260,6 +314,11 @@ RATE_LIMIT_MAX_APPROVAL_ACTIONS=10
 RATE_LIMIT_MAX_STATUS_CHECKS=30
 
 REDIS_URL=redis://localhost:6379/0
+
+OPERATOR_AUTH_ENABLED=true
+OPERATOR_VIEWER_TOKEN=
+OPERATOR_APPROVER_TOKEN=
+OPERATOR_ADMIN_TOKEN=
 ```
 
 ## Running Tests
@@ -418,12 +477,13 @@ Agent calls get_today_summary
    - payload integrity checks
 
 4. Approval workflow
-   - approval-required queue
-   - reviewer identity and audit trail
+   - approval expiry
+   - multi-reviewer rules
+   - SSO/OAuth-backed operator identity
    - configurable limits per environment or merchant
-   - explicit release/deny actions
 
 5. Dashboard
+   - frontend UI over existing operator APIs
    - transaction monitoring
    - callback event timeline
    - daily revenue and failure summaries
@@ -438,6 +498,10 @@ The MVP currently has tested vertical slices for:
 - STK callback handling
 - receipt generation
 - daily analytics
+- reconciliation
+- operator approval API
+- operator dashboard API
+- lightweight operator auth/RBAC
 - MCP server tool registration
 
 All implemented behavior is covered by unit or integration tests and remains mock-backed until real Daraja and database adapters are introduced.

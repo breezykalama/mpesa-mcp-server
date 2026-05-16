@@ -25,6 +25,9 @@ The demo shows:
 - PostgreSQL and Redis-backed local runtime with Docker Compose
 - automatic Alembic migrations during Docker startup
 - health checks for local validation
+- operator dashboard API endpoints
+- lightweight bearer-token operator auth and RBAC
+- read-only reconciliation checks
 
 This is an MVP architecture demo, not a production payment platform.
 
@@ -47,7 +50,7 @@ app/services/
         |
         +--> Safety Policy
         +--> Approval Workflow
-        +--> Daraja Client Protocol
+        +--> Payment Provider Protocol
         +--> Transaction Repository
         +--> Audit Logger
         +--> Metrics / Logs
@@ -59,9 +62,15 @@ app/main.py
         +--> /health/ready
         +--> /metrics
         +--> /callbacks/mpesa/stk
+        +--> /approvals/*
+        +--> /operator/*
+              |
+              +--> Operator bearer auth + RBAC
 ```
 
 The MCP layer stays thin. Business decisions live in services and policies. External systems are behind protocols or repositories so mocks can be replaced later.
+
+The FastAPI operator layer is also thin. It exposes visibility and human approval endpoints while delegating authorization to `app/auth/security.py` and business behavior to existing services.
 
 ## Run With Docker
 
@@ -513,6 +522,72 @@ For example, `BLOCKED_MCP_TOOLS=initiate_stk_push` prevents the STK Push tool fr
 }
 ```
 
+### Operator Security
+
+The FastAPI operator and approval endpoints are protected separately from MCP tools.
+
+Authentication is intentionally lightweight for the MVP:
+
+- clients send `Authorization: Bearer <operator-token>`
+- tokens map to simple roles
+- raw tokens are never logged
+- tests use fake tokens only
+
+Configured roles:
+
+- `viewer`: can read operator dashboard endpoints
+- `approver`: can read operator endpoints and approve or reject pending payment requests
+- `admin`: can access everything, including reconciliation runs
+
+Environment variables:
+
+```env
+OPERATOR_AUTH_ENABLED=true
+OPERATOR_VIEWER_TOKEN=
+OPERATOR_APPROVER_TOKEN=
+OPERATOR_ADMIN_TOKEN=
+```
+
+Protected routes:
+
+```text
+GET  /operator/transactions              viewer+
+GET  /operator/transactions/{id}         viewer+
+GET  /operator/audit-events              viewer+
+GET  /operator/analytics/today           viewer+
+POST /operator/reconciliation/run        admin
+
+GET  /approvals/pending                  approver+
+GET  /approvals/{approval_id}            approver+
+POST /approvals/{approval_id}/approve    approver+
+POST /approvals/{approval_id}/reject     approver+
+```
+
+Example operator request:
+
+```bash
+curl http://localhost:8000/operator/transactions \
+  -H "Authorization: Bearer $OPERATOR_VIEWER_TOKEN"
+```
+
+Missing or invalid tokens return:
+
+```json
+{
+  "detail": "Invalid operator credentials."
+}
+```
+
+Insufficient role access returns:
+
+```json
+{
+  "detail": "Operator is not authorized for this action."
+}
+```
+
+For local-only development, `OPERATOR_AUTH_ENABLED=false` allows access with a synthetic admin principal.
+
 ### Approval Workflow
 
 Payments above `MAX_STK_AMOUNT` are converted into approval requests. They are not executed immediately.
@@ -568,6 +643,18 @@ Audit events are separate from operational logs and are intended for durable bus
 
 Tracked events include payment initiation, callback processing, duplicate callbacks, rejected callbacks, approvals, and receipt generation.
 
+### Operator Visibility
+
+The operator API exposes backend visibility without requiring a dashboard UI yet:
+
+- recent transactions
+- transaction details
+- recent audit events
+- today's analytics summary
+- reconciliation run output
+
+These endpoints are protected by the operator RBAC layer described above.
+
 ### Correlation IDs
 
 FastAPI requests accept `X-Correlation-ID` and return the same header in responses. If a request does not include one, the app generates a UUID-based correlation ID.
@@ -605,7 +692,7 @@ The demo does not:
 - initiate real M-Pesa payments
 - require live Daraja credentials
 - replace Safaricom production approval/compliance processes
-- provide a dashboard UI
+- provide a dashboard UI yet
 - generate PDF receipts
 
 It is a backend architecture MVP for safe AI-agent payment workflows.
