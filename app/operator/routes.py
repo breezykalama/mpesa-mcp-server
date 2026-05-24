@@ -15,6 +15,7 @@ from app.auth.security import OperatorPrincipal, require_admin, require_viewer
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 from app.reconciliation.service import ReconciliationService
+from app.services.receipt_service import ReceiptService, ReceiptServiceResponse
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
 
 router = APIRouter(prefix="/operator", tags=["operator"])
@@ -31,6 +32,19 @@ class OperatorTransactionSummary(BaseModel):
     amount: int
     phone_number: str
     created_at: str
+    provider_transaction_id: str | None = None
+    provider_reference: str | None = None
+
+
+class OperatorSystemStatus(BaseModel):
+    """System configuration fields shown in the operator dashboard."""
+
+    status: str
+    ready: bool
+    payment_provider: str
+    storage_mode: str
+    rate_limit_mode: str
+    auth_mode: str
 
 
 class OperatorAuditEventSummary(BaseModel):
@@ -75,6 +89,14 @@ def get_reconciliation_service(
     return container.reconciliation_service
 
 
+def get_receipt_service(
+    container: Annotated[AppContainer, Depends(get_app_container)],
+) -> ReceiptService:
+    """Return the receipt service dependency."""
+
+    return container.receipt_service
+
+
 @router.get("/transactions")
 def list_transactions(
     transaction_repository: Annotated[
@@ -101,6 +123,8 @@ def list_transactions(
                 amount=transaction.amount,
                 phone_number=transaction.phone_number,
                 created_at=transaction.created_at.isoformat(),
+                provider_transaction_id=transaction.provider_transaction_id,
+                provider_reference=transaction.provider_reference,
             )
             for transaction in transactions
         ]
@@ -187,6 +211,63 @@ def get_today_analytics(
         extra={"event_type": "operator_analytics_today_retrieved"},
     )
     return {"summary": summary.model_dump(mode="json")}
+
+
+@router.get("/system/status")
+def get_system_status(
+    container: Annotated[AppContainer, Depends(get_app_container)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
+) -> dict[str, OperatorSystemStatus]:
+    """Return operator-safe system status details."""
+
+    ready = all(
+        dependency is not None
+        for dependency in (
+            container.payment_provider,
+            container.transaction_repository,
+            container.audit_repository,
+            container.analytics_service,
+            container.reconciliation_service,
+        )
+    )
+    system_status = OperatorSystemStatus(
+        status="ready" if ready else "not_ready",
+        ready=ready,
+        payment_provider=container.settings.payment_provider,
+        storage_mode=container.settings.storage_mode,
+        rate_limit_mode=container.settings.rate_limit_mode,
+        auth_mode="enabled" if container.settings.operator_auth_enabled else "disabled",
+    )
+    logger.info(
+        "Operator system status retrieved.",
+        extra={"event_type": "operator_system_status_retrieved"},
+    )
+    return {"system": system_status}
+
+
+@router.get("/receipts/{reference}", response_model=None)
+def get_receipt(
+    reference: str,
+    receipt_service: Annotated[ReceiptService, Depends(get_receipt_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_viewer)],
+) -> ReceiptServiceResponse | JSONResponse:
+    """Generate a receipt from a checkout or provider transaction reference."""
+
+    response = receipt_service.generate_receipt_by_reference(reference)
+    logger.info(
+        "Operator receipt lookup completed.",
+        extra={
+            "event_type": "operator_receipt_lookup_completed",
+            "status": response.status,
+        },
+    )
+    if response.status == "not_found":
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content=response.model_dump(mode="json"),
+        )
+
+    return response
 
 
 @router.post("/reconciliation/run")

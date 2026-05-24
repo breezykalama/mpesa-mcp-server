@@ -3,13 +3,14 @@ import { useState } from "react";
 import { clearToken, describeApiError, getStoredToken } from "../api/client";
 import { AnalyticsCards } from "../components/AnalyticsCards";
 import { ApprovalsPanel } from "../components/ApprovalsPanel";
-import { AuditEvents } from "../components/AuditEvents";
+import { AuditEvents, CallbackTimeline } from "../components/AuditEvents";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { LoginScreen } from "../components/LoginScreen";
 import { ReconciliationPanel } from "../components/ReconciliationPanel";
 import { SystemStatusPanel } from "../components/SystemStatusPanel";
 import { TransactionsTable } from "../components/TransactionsTable";
+import { ReceiptLookupPanel } from "../features/receipts/ReceiptLookupPanel";
 import { useOperatorData } from "../hooks/useOperatorData";
 
 export function DashboardPage() {
@@ -46,10 +47,16 @@ export function DashboardPage() {
     >
       {dashboardError ? <ErrorBanner message={describeApiError(dashboardError)} /> : null}
 
-      <AnalyticsCards isLoading={data.analytics.isLoading} summary={data.analytics.data} />
+      <AnalyticsCards
+        approvals={data.approvals.data}
+        isLoading={data.analytics.isLoading || data.approvals.isLoading}
+        reconciliation={data.reconciliation.data}
+        summary={data.analytics.data}
+        system={data.health.data}
+      />
 
       <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-        <section className="panel overflow-hidden">
+        <section className="panel overflow-hidden" id="transactions">
           <div className="panel-header">
             <div>
               <h2 className="text-base font-semibold">Recent Transactions</h2>
@@ -78,7 +85,7 @@ export function DashboardPage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <section className="panel">
+        <section className="panel" id="approvals">
           <div className="panel-header">
             <div>
               <h2 className="text-base font-semibold">Pending Approvals</h2>
@@ -113,10 +120,25 @@ export function DashboardPage() {
         </section>
       </div>
 
+      <section className="panel" id="receipts">
+        <div className="panel-header">
+          <div>
+            <h2 className="text-base font-semibold">Receipt Lookup</h2>
+            <p className="mt-1 text-sm text-muted">
+              Find a completed transaction receipt and export it as JSON.
+            </p>
+          </div>
+        </div>
+        <div className="p-5">
+          <ReceiptLookupPanel lookup={data.receiptLookup} />
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-2" id="audit">
       <section className="panel">
         <div className="panel-header">
           <div>
-            <h2 className="text-base font-semibold">Recent Audit Events</h2>
+            <h2 className="text-base font-semibold">Audit Event Timeline</h2>
             <p className="mt-1 text-sm text-muted">Security and workflow events.</p>
           </div>
         </div>
@@ -124,6 +146,24 @@ export function DashboardPage() {
           <AuditEvents events={data.auditEvents.data} isLoading={data.auditEvents.isLoading} />
         </div>
       </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <h2 className="text-base font-semibold">Callback Timeline</h2>
+            <p className="mt-1 text-sm text-muted">
+              Callback-related events sourced from the audit trail.
+            </p>
+          </div>
+        </div>
+        <div className="p-5">
+          <CallbackTimeline
+            events={data.auditEvents.data}
+            isLoading={data.auditEvents.isLoading}
+          />
+        </div>
+      </section>
+      </div>
     </DashboardLayout>
   );
 }

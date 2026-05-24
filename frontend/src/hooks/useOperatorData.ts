@@ -6,6 +6,7 @@ import {
   fetchPendingApprovals,
   fetchTodayAnalytics,
   fetchTransactions,
+  lookupReceipt,
   rejectPaymentRequest,
   runReconciliation,
 } from "../api/client";
@@ -59,6 +60,9 @@ export function useOperatorData(isAuthenticated: boolean) {
   const reconciliation = useMutation({
     mutationFn: runReconciliation,
   });
+  const receiptLookup = useMutation({
+    mutationFn: lookupReceipt,
+  });
 
   return {
     analytics,
@@ -69,5 +73,6 @@ export function useOperatorData(isAuthenticated: boolean) {
     approve,
     reject,
     reconciliation,
+    receiptLookup,
   };
 }

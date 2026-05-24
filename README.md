@@ -227,7 +227,7 @@ Run the frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -385,7 +385,11 @@ python -m compileall app tests scripts
 
 ## Continuous Integration
 
-GitHub Actions runs on every push and pull request. The CI workflow uses Python 3.12 and `uv` to install dependencies, compile modules, run the pytest suite, run Ruff, and run mypy.
+GitHub Actions runs on every push and pull request.
+
+The backend job uses Python 3.12 and `uv` to install dependencies, compile modules, run the pytest suite, run Ruff, and run mypy.
+
+The frontend job uses Node.js LTS, installs dependencies with `npm ci`, runs Vitest, and runs the React dashboard production build.
 
 The workflow does not start PostgreSQL, Redis, or call Daraja. Tests use in-memory adapters and mocked HTTP clients, so CI does not require production credentials or repository secrets.
 
@@ -431,7 +435,7 @@ To run the React operator dashboard instead:
 ```bash
 cd frontend
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 
@@ -556,9 +560,10 @@ Agent calls get_today_summary
 5. Dashboard
    - production hardening for the React operator dashboard
    - transaction monitoring
-   - callback event timeline
+   - receipt lookup and JSON export
+   - audit and callback timelines
+   - filtering, search, and sorting for transactions
    - daily revenue and failure summaries
-   - receipt lookup and export
 
 ## Development Status
 

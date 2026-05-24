@@ -4,6 +4,7 @@ import type {
   ApprovalRequest,
   AuditEventSummary,
   ReconciliationSummary,
+  ReceiptLookupResponse,
   SystemStatus,
   TransactionSummary,
 } from "../types/operator";
@@ -76,7 +77,14 @@ export async function runReconciliation(): Promise<ReconciliationSummary> {
 }
 
 export async function fetchHealth(): Promise<SystemStatus> {
-  const response = await api.get<SystemStatus>("/health");
+  const response = await api.get<{ system: SystemStatus }>("/operator/system/status");
+  return response.data.system;
+}
+
+export async function lookupReceipt(reference: string): Promise<ReceiptLookupResponse> {
+  const response = await api.get<ReceiptLookupResponse>(
+    `/operator/receipts/${encodeURIComponent(reference)}`,
+  );
   return response.data;
 }
 

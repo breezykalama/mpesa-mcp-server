@@ -1,16 +1,25 @@
-import { Banknote, Clock3, ReceiptText, TrendingUp } from "lucide-react";
-import type { AnalyticsSummary } from "../types/operator";
+import { AlertTriangle, Banknote, ClipboardCheck, Network, SearchX } from "lucide-react";
+import type { AnalyticsSummary, ApprovalRequest, ReconciliationSummary, SystemStatus } from "../types/operator";
 import { MetricCard } from "./MetricCard";
-import { SkeletonRows } from "./Skeleton";
+import { SkeletonCards } from "./Skeleton";
 
 interface AnalyticsCardsProps {
   summary?: AnalyticsSummary;
+  approvals?: ApprovalRequest[];
+  reconciliation?: ReconciliationSummary;
+  system?: SystemStatus;
   isLoading: boolean;
 }
 
-export function AnalyticsCards({ summary, isLoading }: AnalyticsCardsProps) {
+export function AnalyticsCards({
+  summary,
+  approvals,
+  reconciliation,
+  system,
+  isLoading,
+}: AnalyticsCardsProps) {
   if (isLoading) {
-    return <SkeletonRows />;
+    return <SkeletonCards />;
   }
 
   const safeSummary =
@@ -19,34 +28,41 @@ export function AnalyticsCards({ summary, isLoading }: AnalyticsCardsProps) {
       total_transactions: 0,
       completed_transactions: 0,
       pending_transactions: 0,
+      failed_transactions: 0,
       total_revenue: 0,
     } as AnalyticsSummary);
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" id="overview">
       <MetricCard
-        detail="All transactions created today"
-        icon={ReceiptText}
-        label="Total transactions"
-        value={safeSummary.total_transactions}
-      />
-      <MetricCard
-        detail="Completed payments only"
-        icon={TrendingUp}
-        label="Completed"
-        value={safeSummary.completed_transactions}
-      />
-      <MetricCard
-        detail="Awaiting provider or callback state"
-        icon={Clock3}
-        label="Pending"
-        value={safeSummary.pending_transactions}
-      />
-      <MetricCard
-        detail="Revenue counts completed transactions"
+        detail="Completed transactions only"
         icon={Banknote}
-        label="Revenue"
+        label="Today revenue"
         value={`KES ${safeSummary.total_revenue.toLocaleString()}`}
+      />
+      <MetricCard
+        detail="Transactions marked failed today"
+        icon={AlertTriangle}
+        label="Failed payments"
+        value={safeSummary.failed_transactions}
+      />
+      <MetricCard
+        detail="Awaiting human decision"
+        icon={ClipboardCheck}
+        label="Pending approvals"
+        value={approvals?.length ?? 0}
+      />
+      <MetricCard
+        detail="Latest reconciliation result"
+        icon={SearchX}
+        label="Recon findings"
+        value={reconciliation?.finding_count ?? 0}
+      />
+      <MetricCard
+        detail="Configured active rail"
+        icon={Network}
+        label="Active provider"
+        value={system?.payment_provider ?? "unknown"}
       />
     </section>
   );

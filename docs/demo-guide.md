@@ -628,9 +628,11 @@ It includes:
 - login/token screen
 - dashboard overview
 - today's analytics cards
-- recent transactions table
+- recent transactions table with filtering, search, sorting, and relative timestamps
 - pending approvals panel
-- recent audit events
+- audit event timeline
+- callback event timeline sourced from audit events
+- receipt lookup and JSON export
 - reconciliation panel
 - system status panel
 

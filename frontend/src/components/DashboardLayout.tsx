@@ -1,4 +1,13 @@
-import { LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  ClipboardCheck,
+  History,
+  LogOut,
+  ReceiptText,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { PropsWithChildren } from "react";
 
 interface DashboardLayoutProps extends PropsWithChildren {
@@ -13,10 +22,18 @@ export function DashboardLayout({
   onRefresh,
   isRefreshing,
 }: DashboardLayoutProps) {
+  const navItems = [
+    { href: "#overview", label: "Overview", icon: BarChart3 },
+    { href: "#transactions", label: "Transactions", icon: Activity },
+    { href: "#approvals", label: "Approvals", icon: ClipboardCheck },
+    { href: "#receipts", label: "Receipts", icon: ReceiptText },
+    { href: "#audit", label: "Audit", icon: History },
+  ];
+
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="border-b border-line bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8 xl:flex-row xl:items-center xl:justify-between">
+      <header className="sticky top-0 z-30 border-b border-line bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium text-money">
               <ShieldCheck className="h-4 w-4" />
@@ -40,6 +57,18 @@ export function DashboardLayout({
             </button>
           </div>
         </div>
+        <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 pb-3 sm:px-6 lg:px-8">
+          {navItems.map((item) => (
+            <a
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted transition hover:bg-slate-100 hover:text-ink"
+              href={item.href}
+              key={item.href}
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </a>
+          ))}
+        </nav>
       </header>
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:px-8">
         {children}

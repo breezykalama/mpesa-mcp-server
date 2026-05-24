@@ -15,6 +15,8 @@ export interface TransactionSummary {
   amount: number;
   phone_number: string;
   created_at: string;
+  provider_transaction_id: string | null;
+  provider_reference: string | null;
 }
 
 export interface AuditEventSummary {
@@ -61,5 +63,27 @@ export interface ReconciliationSummary {
 
 export interface SystemStatus {
   status: string;
+  ready?: boolean;
+  payment_provider?: string;
   storage_mode: string;
+  rate_limit_mode?: string;
+  auth_mode?: string;
+}
+
+export interface ReceiptPayload {
+  receipt_id: string;
+  transaction_id: string;
+  checkout_request_id: string;
+  mpesa_receipt_number: string;
+  amount: number;
+  phone_number: string;
+  status: string;
+  issued_at: string;
+}
+
+export interface ReceiptLookupResponse {
+  status: string;
+  allowed: boolean;
+  reason: string;
+  receipt: ReceiptPayload | null;
 }

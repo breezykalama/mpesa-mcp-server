@@ -26,6 +26,19 @@ export function SystemStatusPanel({ status, isLoading }: SystemStatusPanelProps)
         </div>
         <p className="mt-3 text-lg font-semibold">{status?.storage_mode ?? "unknown"}</p>
       </div>
+      <StatusTile label="Provider" value={status?.payment_provider ?? "unknown"} />
+      <StatusTile label="Rate limits" value={status?.rate_limit_mode ?? "unknown"} />
+      <StatusTile label="Operator auth" value={status?.auth_mode ?? "unknown"} />
+      <StatusTile label="Readiness" value={status?.ready ? "ready" : "unknown"} />
+    </div>
+  );
+}
+
+function StatusTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-line p-4">
+      <p className="text-sm text-muted">{label}</p>
+      <p className="mt-3 text-lg font-semibold">{value}</p>
     </div>
   );
 }
