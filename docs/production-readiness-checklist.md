@@ -91,11 +91,13 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Support Redis-backed replay protection.
 - [x] **Done:** Audit rejected callbacks.
 - [x] **Done:** Audit duplicate callbacks.
+- [x] **Done:** Add strict callback payload validation.
+- [x] **Done:** Reject callbacks for unknown transactions.
+- [x] **Done:** Validate callback amount against the local transaction when supplied.
+- [x] **Done:** Validate callback phone number against the local transaction when supplied.
+- [x] **Done:** Add source verification abstraction with development and strict placeholder modes.
 - [ ] **Todo:** Require callback secret outside local development.
-- [ ] **Todo:** Add provider/source verification strategy.
-- [ ] **Todo:** Add stricter callback payload schema validation.
-- [ ] **Todo:** Validate callback amount against the local transaction.
-- [ ] **Todo:** Validate callback phone number where available.
+- [ ] **Todo:** Add real provider/source verification strategy.
 - [ ] **Todo:** Add stronger payload integrity checks if provider support is available.
 - [ ] **Todo:** Document callback verification process.
 

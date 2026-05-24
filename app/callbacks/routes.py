@@ -87,11 +87,44 @@ def handle_stk_callback(
 ) -> CallbackProcessingResult | JSONResponse:
     """Handle an M-Pesa STK callback."""
 
+    source_response = reject_untrusted_callback_source_if_needed(payload, container)
+    if source_response is not None:
+        return source_response
+
     replay_response = reject_duplicate_callback_if_needed(payload, container)
     if replay_response is not None:
         return replay_response
 
     return handler.process(payload)
+
+
+def reject_untrusted_callback_source_if_needed(
+    payload: dict[str, Any],
+    container: AppContainer,
+) -> JSONResponse | None:
+    """Reject callbacks that fail the configured source verification strategy."""
+
+    decision = container.callback_source_verifier.verify(payload)
+    if decision.allowed:
+        return None
+
+    container.audit_logger.log_event(
+        "stk_callback_source_rejected",
+        {"reason": decision.reason},
+        actor="mpesa_callback",
+    )
+    logger.warning(
+        "Callback source verification rejected request.",
+        extra={"event_type": "callback_source_rejected", "status": "forbidden"},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={
+            "status": "untrusted_callback_source",
+            "success": False,
+            "reason": decision.reason,
+        },
+    )
 
 
 def reject_duplicate_callback_if_needed(

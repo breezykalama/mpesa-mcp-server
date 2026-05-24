@@ -18,6 +18,11 @@ from app.callbacks.replay import (
     RedisReplayProtection,
     ReplayProtectionProtocol,
 )
+from app.callbacks.source_verifier import (
+    CallbackSourceVerifierProtocol,
+    DevelopmentCallbackSourceVerifier,
+    StrictPlaceholderCallbackSourceVerifier,
+)
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
@@ -60,6 +65,7 @@ class AppContainer:
     tool_policy: ToolPolicyEngine
     rate_limiter: RateLimiterProtocol
     replay_protection: ReplayProtectionProtocol
+    callback_source_verifier: CallbackSourceVerifierProtocol
     receipt_generator: ReceiptGenerator
     payment_service: PaymentService
     approval_service: ApprovalService
@@ -85,6 +91,9 @@ class AppContainer:
         tool_policy = ToolPolicyEngine.from_settings(resolved_settings)
         rate_limiter = cls._create_rate_limiter(resolved_settings)
         replay_protection = cls._create_replay_protection(resolved_settings)
+        callback_source_verifier = cls._create_callback_source_verifier(
+            resolved_settings
+        )
         daraja_client = cls._create_daraja_client(resolved_settings)
         payment_provider = cls._create_payment_provider(resolved_settings, daraja_client)
         payment_policy = PaymentPolicy(max_stk_amount=resolved_settings.max_stk_amount)
@@ -113,6 +122,7 @@ class AppContainer:
             tool_policy=tool_policy,
             rate_limiter=rate_limiter,
             replay_protection=replay_protection,
+            callback_source_verifier=callback_source_verifier,
             receipt_generator=receipt_generator,
             approval_service=approval_service,
             payment_service=PaymentService(
@@ -192,6 +202,21 @@ class AppContainer:
             return RedisReplayProtection(redis_url=settings.redis_url)
 
         raise ValueError("CALLBACK_REPLAY_MODE must be one of: memory, redis.")
+
+    @staticmethod
+    def _create_callback_source_verifier(
+        settings: Settings,
+    ) -> CallbackSourceVerifierProtocol:
+        if settings.callback_source_verification_mode == "development":
+            return DevelopmentCallbackSourceVerifier()
+
+        if settings.callback_source_verification_mode == "strict_placeholder":
+            return StrictPlaceholderCallbackSourceVerifier()
+
+        raise ValueError(
+            "CALLBACK_SOURCE_VERIFICATION_MODE must be one of: "
+            "development, strict_placeholder."
+        )
 
     @staticmethod
     def _create_session_factory(settings: Settings) -> SessionFactory | None:

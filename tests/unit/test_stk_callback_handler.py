@@ -105,9 +105,97 @@ def test_missing_checkout_request_id_returns_invalid_result() -> None:
 
     result = handler.process({"Body": {"stkCallback": {"ResultCode": 0}}})
 
-    assert result.status == "invalid"
+    assert result.status == "invalid_callback"
     assert result.success is False
-    assert "CheckoutRequestID is required" in result.reason
+    assert result.reason == "Malformed callback payload."
+
+
+def test_missing_body_returns_invalid_callback() -> None:
+    handler, _repository, audit_logger = build_handler()
+
+    result = handler.process({"stkCallback": {"CheckoutRequestID": "ws_CO_123"}})
+
+    assert result.status == "invalid_callback"
+    assert result.success is False
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_payload"
+
+
+def test_missing_stk_callback_returns_invalid_callback() -> None:
+    handler, _repository, audit_logger = build_handler()
+
+    result = handler.process({"Body": {}})
+
+    assert result.status == "invalid_callback"
+    assert result.success is False
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_payload"
+
+
+def test_missing_result_code_returns_invalid_callback() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+
+    payload = stk_callback_payload()
+    payload["Body"]["stkCallback"].pop("ResultCode")
+    result = handler.process(payload)
+
+    assert result.status == "invalid_callback"
+    assert result.success is False
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_payload"
+
+
+def test_unknown_transaction_is_rejected() -> None:
+    handler, repository, audit_logger = build_handler()
+
+    result = handler.process(stk_callback_payload(checkout_request_id="unknown"))
+
+    assert result.status == "unknown_transaction"
+    assert result.success is False
+    assert repository.list_transactions() == []
+    assert audit_logger.events[-1].event_type == "stk_callback_unknown_transaction"
+
+
+def test_amount_mismatch_is_rejected() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+
+    result = handler.process(
+        stk_callback_payload(
+            metadata_items=[
+                {"Name": "Amount", "Value": 2_000},
+                {"Name": "MpesaReceiptNumber", "Value": "RCP123"},
+                {"Name": "PhoneNumber", "Value": 254700000000},
+            ]
+        )
+    )
+    transaction = repository.find_by_checkout_request_id("ws_CO_123")
+
+    assert result.status == "amount_mismatch"
+    assert result.success is False
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert audit_logger.events[-1].event_type == "stk_callback_amount_mismatch"
+
+
+def test_phone_mismatch_is_rejected() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+
+    result = handler.process(
+        stk_callback_payload(
+            metadata_items=[
+                {"Name": "Amount", "Value": 1_000},
+                {"Name": "MpesaReceiptNumber", "Value": "RCP123"},
+                {"Name": "PhoneNumber", "Value": 254711111111},
+            ]
+        )
+    )
+    transaction = repository.find_by_checkout_request_id("ws_CO_123")
+
+    assert result.status == "phone_mismatch"
+    assert result.success is False
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert audit_logger.events[-1].event_type == "stk_callback_phone_mismatch"
 
 
 def test_receipt_number_is_stored_when_present() -> None:

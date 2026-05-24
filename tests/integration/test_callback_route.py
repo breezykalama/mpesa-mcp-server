@@ -72,6 +72,45 @@ def test_callback_accepted_when_no_secret_configured() -> None:
     assert response.json()["status"] == "completed"
 
 
+def test_development_source_verifier_allows_callbacks() -> None:
+    container = build_callback_container(
+        callback_shared_secret=None,
+        callback_source_verification_mode="development",
+    )
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json=stk_callback_payload())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+def test_strict_placeholder_source_verifier_rejects_callbacks() -> None:
+    container = build_callback_container(
+        callback_shared_secret=None,
+        callback_source_verification_mode="strict_placeholder",
+    )
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json=stk_callback_payload())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["status"] == "untrusted_callback_source"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_source_rejected"
+
+
 def test_callback_accepted_with_valid_secret() -> None:
     container = build_callback_container(callback_shared_secret="local-callback-secret")
     seed_route_transaction(container)
@@ -189,6 +228,38 @@ def test_duplicate_callback_writes_audit_event() -> None:
     )
 
 
+def test_malformed_callback_route_writes_audit_event() -> None:
+    container = build_callback_container(callback_shared_secret=None)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json={"Body": {}})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "invalid_callback"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_invalid_payload"
+
+
+def test_unknown_transaction_route_writes_audit_event() -> None:
+    container = build_callback_container(callback_shared_secret=None)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json=stk_callback_payload())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unknown_transaction"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_unknown_transaction"
+
+
 def test_disabled_replay_protection_allows_duplicates() -> None:
     container = build_callback_container(
         callback_shared_secret=None,
@@ -241,12 +312,14 @@ def build_callback_container(
     callback_shared_secret: str | None,
     *,
     callback_replay_protection_enabled: bool = True,
+    callback_source_verification_mode: str = "development",
 ) -> AppContainer:
     return AppContainer.mock(
         settings=Settings(
             database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
             callback_shared_secret=callback_shared_secret,
             callback_replay_protection_enabled=callback_replay_protection_enabled,
+            callback_source_verification_mode=callback_source_verification_mode,
         )
     )
 

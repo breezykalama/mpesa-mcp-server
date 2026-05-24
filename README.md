@@ -168,6 +168,7 @@ Key safeguards include:
 - **Transaction state machine:** pending transactions can move only into terminal states, and terminal states cannot be overwritten by duplicate or late callbacks.
 - **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
 - **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
+- **Callback trust validation:** callbacks must match a known transaction and any supplied amount or phone metadata must match the original request.
 - **Audit trail:** payment initiation, callbacks, approvals, receipt generation, and rejected security events are captured as structured audit events.
 - **Correlation IDs:** FastAPI requests and MCP tool execution carry correlation IDs through logs and audit events for traceability.
 - **Structured logs:** operational logs are JSON by default and avoid known secret fields.
@@ -275,7 +276,12 @@ The callback route supports an optional shared-secret guard for development and 
 - Missing or invalid secrets are rejected with `401`.
 - Rejected callback attempts are written to the audit log as `stk_callback_rejected`.
 - Duplicate callback payloads are rejected with `409` as `duplicate_callback`.
+- Malformed callbacks are rejected as `invalid_callback`.
+- Unknown transaction callbacks are rejected as `unknown_transaction`.
+- Supplied callback amount and phone metadata must match the stored transaction.
 - If `CALLBACK_SHARED_SECRET` is empty, callbacks are accepted for local mock development.
+
+`CALLBACK_SOURCE_VERIFICATION_MODE=development` intentionally allows local callbacks. `strict_placeholder` rejects callbacks until a real deployment/provider source verification strategy is configured.
 
 This is a pragmatic prototype control, not a complete production verification strategy. A production adapter should add source validation, stronger payload integrity checks, and provider-specific verification when available.
 
@@ -390,6 +396,7 @@ DARAJA_CIRCUIT_BREAKER_ENABLED=true
 DARAJA_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
 DARAJA_CIRCUIT_BREAKER_RECOVERY_SECONDS=60
 CALLBACK_SHARED_SECRET=
+CALLBACK_SOURCE_VERIFICATION_MODE=development
 
 MAX_STK_AMOUNT=10000
 
