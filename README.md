@@ -283,7 +283,7 @@ The callback route supports an optional shared-secret guard for development and 
 - Supplied callback amount and phone metadata must match the stored transaction.
 - If `CALLBACK_SHARED_SECRET` is empty, callbacks are accepted for local mock development.
 
-`CALLBACK_SOURCE_VERIFICATION_MODE=development` intentionally allows local callbacks. `strict_placeholder` rejects callbacks until a real deployment/provider source verification strategy is configured.
+`CALLBACK_SOURCE_VERIFICATION_MODE=development` intentionally allows local callbacks and is unsafe for production. `strict_block` rejects all callbacks. `trusted_proxy` requires a trusted reverse proxy, API gateway, ingress controller, or edge worker to inject the configured trusted proxy header before the app accepts the callback.
 
 This is a pragmatic prototype control, not a complete production verification strategy. A production adapter should add source validation, stronger payload integrity checks, and provider-specific verification when available.
 
@@ -399,6 +399,8 @@ DARAJA_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
 DARAJA_CIRCUIT_BREAKER_RECOVERY_SECONDS=60
 CALLBACK_SHARED_SECRET=
 CALLBACK_SOURCE_VERIFICATION_MODE=development
+TRUSTED_PROXY_SHARED_SECRET=
+TRUSTED_PROXY_HEADER_NAME=X-Trusted-Callback-Proxy
 
 MAX_STK_AMOUNT=10000
 

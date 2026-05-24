@@ -44,6 +44,8 @@ def test_production_mode_with_credentials_passes() -> None:
         daraja_production_passkey="passkey",
         daraja_production_shortcode="174379",
         daraja_production_callback_url="https://example.test/callback",
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="trusted-proxy-secret",
     )
 
     validate_startup_settings(settings)
@@ -114,3 +116,47 @@ def test_callback_secret_required_outside_development() -> None:
 
     assert "CALLBACK_SHARED_SECRET" in str(exc_info.value)
 
+
+def test_production_daraja_disallows_development_callback_source_verifier() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        app_env="development",
+        daraja_mode="production",
+        operator_auth_enabled=False,
+        daraja_production_consumer_key="consumer-key",
+        daraja_production_consumer_secret="consumer-secret",
+        daraja_production_passkey="passkey",
+        daraja_production_shortcode="174379",
+        daraja_production_callback_url="https://example.test/callback",
+        callback_source_verification_mode="development",
+    )
+
+    with pytest.raises(StartupConfigValidationError) as exc_info:
+        validate_startup_settings(settings)
+
+    assert "development mode is not allowed" in str(exc_info.value)
+
+
+def test_trusted_proxy_missing_config_fails_startup_validation() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        operator_auth_enabled=False,
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="",
+    )
+
+    with pytest.raises(StartupConfigValidationError) as exc_info:
+        validate_startup_settings(settings)
+
+    assert "TRUSTED_PROXY_SHARED_SECRET" in str(exc_info.value)
+
+
+def test_trusted_proxy_valid_config_passes_startup_validation() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        operator_auth_enabled=False,
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="trusted-proxy-secret",
+    )
+
+    validate_startup_settings(settings)

@@ -99,10 +99,10 @@ def test_development_source_verifier_allows_callbacks() -> None:
     assert response.json()["status"] == "completed"
 
 
-def test_strict_placeholder_source_verifier_rejects_callbacks() -> None:
+def test_strict_block_source_verifier_rejects_callbacks() -> None:
     container = build_callback_container(
         callback_shared_secret=None,
-        callback_source_verification_mode="strict_placeholder",
+        callback_source_verification_mode="strict_block",
     )
     seed_route_transaction(container)
 
@@ -115,7 +115,77 @@ def test_strict_placeholder_source_verifier_rejects_callbacks() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 403
-    assert response.json()["status"] == "untrusted_callback_source"
+    assert response.json()["status"] == "callback_source_rejected"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_source_rejected"
+
+
+def test_trusted_proxy_source_verifier_accepts_valid_header() -> None:
+    container = build_callback_container(
+        callback_shared_secret=None,
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="trusted-proxy-secret",
+    )
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/callbacks/mpesa/stk",
+            json=stk_callback_payload(),
+            headers={"X-Trusted-Callback-Proxy": "trusted-proxy-secret"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+
+
+def test_trusted_proxy_source_verifier_rejects_missing_header() -> None:
+    container = build_callback_container(
+        callback_shared_secret=None,
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="trusted-proxy-secret",
+    )
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json=stk_callback_payload())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["status"] == "callback_source_rejected"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_source_rejected"
+
+
+def test_trusted_proxy_source_verifier_rejects_wrong_secret() -> None:
+    container = build_callback_container(
+        callback_shared_secret=None,
+        callback_source_verification_mode="trusted_proxy",
+        trusted_proxy_shared_secret="trusted-proxy-secret",
+    )
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/callbacks/mpesa/stk",
+            json=stk_callback_payload(),
+            headers={"X-Trusted-Callback-Proxy": "wrong-secret"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["status"] == "callback_source_rejected"
     assert container.audit_logger.events[-1].event_type == "stk_callback_source_rejected"
 
 
@@ -339,6 +409,7 @@ def build_callback_container(
     *,
     callback_replay_protection_enabled: bool = True,
     callback_source_verification_mode: str = "development",
+    trusted_proxy_shared_secret: str | None = None,
 ) -> AppContainer:
     return AppContainer.mock(
         settings=Settings(
@@ -346,6 +417,7 @@ def build_callback_container(
             callback_shared_secret=callback_shared_secret,
             callback_replay_protection_enabled=callback_replay_protection_enabled,
             callback_source_verification_mode=callback_source_verification_mode,
+            trusted_proxy_shared_secret=trusted_proxy_shared_secret,
         )
     )
 

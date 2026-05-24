@@ -31,6 +31,29 @@ Outside development-like environments, `CALLBACK_SHARED_SECRET` must be configur
 
 Redis-backed modes require a valid `REDIS_URL`, and Postgres storage requires a PostgreSQL `DATABASE_URL`.
 
+## Callback Source Verification
+
+The app does not claim to cryptographically verify Safaricom callbacks directly.
+
+Production deployments should use a trusted infrastructure boundary:
+
+```text
+Safaricom callback
+  -> reverse proxy / API gateway / ingress / edge worker
+  -> trusted proxy injects a secret header
+  -> application validates the trusted header
+```
+
+Supported callback source modes:
+
+- `development`: allows callbacks for local development only. Unsafe for production.
+- `strict_block`: rejects all callbacks. Safe fail-closed mode.
+- `trusted_proxy`: requires `TRUSTED_PROXY_SHARED_SECRET` and validates `TRUSTED_PROXY_HEADER_NAME`, defaulting to `X-Trusted-Callback-Proxy`.
+
+Suitable trusted proxy options include Nginx, Traefik, Cloudflare Workers, API Gateway, or an ingress controller. The app should not be exposed in a way that allows arbitrary public requests to inject the trusted header.
+
+The trusted proxy shared secret should be rotated like any other production secret.
+
 ## Dependency Failure Policy
 
 Configured critical dependencies are validated at startup.

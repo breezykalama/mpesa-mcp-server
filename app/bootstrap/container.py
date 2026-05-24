@@ -21,7 +21,8 @@ from app.callbacks.replay import (
 from app.callbacks.source_verifier import (
     CallbackSourceVerifierProtocol,
     DevelopmentCallbackSourceVerifier,
-    StrictPlaceholderCallbackSourceVerifier,
+    StrictBlockCallbackSourceVerifier,
+    TrustedProxyCallbackSourceVerifier,
 )
 from app.config import Settings, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
@@ -210,12 +211,22 @@ class AppContainer:
         if settings.callback_source_verification_mode == "development":
             return DevelopmentCallbackSourceVerifier()
 
-        if settings.callback_source_verification_mode == "strict_placeholder":
-            return StrictPlaceholderCallbackSourceVerifier()
+        if settings.callback_source_verification_mode == "strict_block":
+            return StrictBlockCallbackSourceVerifier()
+
+        if settings.callback_source_verification_mode == "trusted_proxy":
+            if settings.trusted_proxy_shared_secret is None:
+                raise ValueError(
+                    "TRUSTED_PROXY_SHARED_SECRET is required for trusted_proxy mode."
+                )
+            return TrustedProxyCallbackSourceVerifier(
+                header_name=settings.trusted_proxy_header_name,
+                shared_secret=settings.trusted_proxy_shared_secret,
+            )
 
         raise ValueError(
             "CALLBACK_SOURCE_VERIFICATION_MODE must be one of: "
-            "development, strict_placeholder."
+            "development, trusted_proxy, strict_block."
         )
 
     @staticmethod

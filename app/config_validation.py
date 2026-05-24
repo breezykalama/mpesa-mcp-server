@@ -26,6 +26,7 @@ def validate_startup_settings(settings: Settings) -> None:
     issues.extend(_validate_daraja_production_settings(settings))
     issues.extend(_validate_operator_auth_settings(settings))
     issues.extend(_validate_callback_secret_settings(settings))
+    issues.extend(_validate_callback_source_verification_settings(settings))
     issues.extend(_validate_redis_settings(settings))
     issues.extend(_validate_postgres_settings(settings))
 
@@ -91,6 +92,45 @@ def _validate_callback_secret_settings(settings: Settings) -> list[ConfigValidat
     ]
 
 
+def _validate_callback_source_verification_settings(
+    settings: Settings,
+) -> list[ConfigValidationIssue]:
+    allowed_modes = {"development", "trusted_proxy", "strict_block"}
+    issues: list[ConfigValidationIssue] = []
+    if settings.callback_source_verification_mode not in allowed_modes:
+        issues.append(
+            ConfigValidationIssue(
+                "CALLBACK_SOURCE_VERIFICATION_MODE",
+                "must be one of development, trusted_proxy, strict_block",
+            )
+        )
+        return issues
+
+    if (
+        settings.daraja_mode == "production"
+        and settings.callback_source_verification_mode == "development"
+    ):
+        issues.append(
+            ConfigValidationIssue(
+                "CALLBACK_SOURCE_VERIFICATION_MODE",
+                "development mode is not allowed when DARAJA_MODE=production",
+            )
+        )
+
+    if (
+        settings.callback_source_verification_mode == "trusted_proxy"
+        and not _has_value(settings.trusted_proxy_shared_secret)
+    ):
+        issues.append(
+            ConfigValidationIssue(
+                "TRUSTED_PROXY_SHARED_SECRET",
+                "required when CALLBACK_SOURCE_VERIFICATION_MODE=trusted_proxy",
+            )
+        )
+
+    return issues
+
+
 def _validate_redis_settings(settings: Settings) -> list[ConfigValidationIssue]:
     redis_required = (
         settings.rate_limit_mode == "redis"
@@ -131,4 +171,3 @@ def _validate_postgres_settings(settings: Settings) -> list[ConfigValidationIssu
 
 def _has_value(value: str | None) -> bool:
     return isinstance(value, str) and value.strip() != ""
-

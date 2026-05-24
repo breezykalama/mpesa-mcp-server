@@ -7,7 +7,8 @@ from app.bootstrap.container import DEFAULT_MOCK_DATABASE_URL, AppContainer
 from app.callbacks.replay import InMemoryReplayProtection, RedisReplayProtection
 from app.callbacks.source_verifier import (
     DevelopmentCallbackSourceVerifier,
-    StrictPlaceholderCallbackSourceVerifier,
+    StrictBlockCallbackSourceVerifier,
+    TrustedProxyCallbackSourceVerifier,
 )
 from app.config import Settings
 from app.daraja.client import MockDarajaClient, RealDarajaClient
@@ -163,15 +164,30 @@ def test_container_selects_redis_replay_protection_for_redis_mode() -> None:
     assert isinstance(container.replay_protection, RedisReplayProtection)
 
 
-def test_container_selects_strict_placeholder_callback_source_verifier() -> None:
+def test_container_selects_strict_block_callback_source_verifier() -> None:
     container = AppContainer.mock(
         settings=Settings(
             database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
-            callback_source_verification_mode="strict_placeholder",
+            callback_source_verification_mode="strict_block",
         )
     )
 
     assert isinstance(
         container.callback_source_verifier,
-        StrictPlaceholderCallbackSourceVerifier,
+        StrictBlockCallbackSourceVerifier,
+    )
+
+
+def test_container_selects_trusted_proxy_callback_source_verifier() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            callback_source_verification_mode="trusted_proxy",
+            trusted_proxy_shared_secret="trusted-proxy-secret",
+        )
+    )
+
+    assert isinstance(
+        container.callback_source_verifier,
+        TrustedProxyCallbackSourceVerifier,
     )

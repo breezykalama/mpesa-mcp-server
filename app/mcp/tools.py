@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.analytics.service import DailyAnalyticsSummary
 from app.approvals.service import ApprovalServiceResponse
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.mcp.schemas import (
     ApprovePaymentRequestInput,
     CheckPaymentStatusInput,
@@ -732,11 +733,33 @@ def _check_rate_limit(
     if not enabled or rate_limiter is None:
         return None
 
-    decision = rate_limiter.allow(
-        key=key,
-        limit=limit,
-        window_seconds=window_seconds,
-    )
+    try:
+        decision = rate_limiter.allow(
+            key=key,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+    except InfrastructureUnavailableError:
+        logger.warning(
+            "Rate limiter unavailable; sensitive tool call rejected.",
+            extra={"event_type": "rate_limiter_unavailable", "status": "blocked"},
+        )
+        return McpToolResponse(
+            status="infrastructure_unavailable",
+            allowed=False,
+            reason="Rate limiter unavailable; request rejected safely.",
+        )
+    except Exception:
+        logger.exception(
+            "Unexpected rate limiter failure; sensitive tool call rejected.",
+            extra={"event_type": "rate_limiter_unavailable", "status": "blocked"},
+        )
+        return McpToolResponse(
+            status="infrastructure_unavailable",
+            allowed=False,
+            reason="Rate limiter unavailable; request rejected safely.",
+        )
+
     if decision.allowed:
         return None
 

@@ -95,9 +95,11 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Reject callbacks for unknown transactions.
 - [x] **Done:** Validate callback amount against the local transaction when supplied.
 - [x] **Done:** Validate callback phone number against the local transaction when supplied.
-- [x] **Done:** Add source verification abstraction with development and strict placeholder modes.
+- [x] **Done:** Add source verification abstraction with development, trusted proxy, and strict block modes.
+- [x] **Done:** Add trusted proxy header verification for production deployment.
+- [x] **Done:** Disallow development callback source verification when Daraja production mode is enabled.
 - [ ] **Todo:** Require callback secret outside local development.
-- [ ] **Todo:** Add real provider/source verification strategy.
+- [x] **Done:** Add production callback source verification strategy using a trusted proxy boundary.
 - [ ] **Todo:** Add stronger payload integrity checks if provider support is available.
 - [ ] **Todo:** Document callback verification process.
 

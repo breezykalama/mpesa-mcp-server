@@ -17,6 +17,7 @@ services:
       DARAJA_MODE: mock
       LOG_LEVEL: INFO
       LOG_FORMAT: json
+      OPERATOR_AUTH_ENABLED: "false"
     ports:
       - "8000:8000"
     depends_on:

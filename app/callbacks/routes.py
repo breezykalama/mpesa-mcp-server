@@ -6,7 +6,7 @@ import logging
 from secrets import compare_digest
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from app.bootstrap.container import AppContainer, create_app_container
@@ -81,6 +81,7 @@ def validate_callback_secret(
 
 @router.post("/callbacks/mpesa/stk", response_model=None)
 def handle_stk_callback(
+    request: Request,
     payload: dict[str, Any],
     _validated: Annotated[None, Depends(validate_callback_secret)],
     container: Annotated[AppContainer, Depends(get_app_container)],
@@ -88,7 +89,11 @@ def handle_stk_callback(
 ) -> CallbackProcessingResult | JSONResponse:
     """Handle an M-Pesa STK callback."""
 
-    source_response = reject_untrusted_callback_source_if_needed(payload, container)
+    source_response = reject_untrusted_callback_source_if_needed(
+        payload,
+        container,
+        dict(request.headers),
+    )
     if source_response is not None:
         return source_response
 
@@ -124,10 +129,11 @@ def handle_stk_callback(
 def reject_untrusted_callback_source_if_needed(
     payload: dict[str, Any],
     container: AppContainer,
+    headers: dict[str, str],
 ) -> JSONResponse | None:
     """Reject callbacks that fail the configured source verification strategy."""
 
-    decision = container.callback_source_verifier.verify(payload)
+    decision = container.callback_source_verifier.verify(payload, headers)
     if decision.allowed:
         return None
 
@@ -143,7 +149,7 @@ def reject_untrusted_callback_source_if_needed(
     return JSONResponse(
         status_code=status.HTTP_403_FORBIDDEN,
         content={
-            "status": "untrusted_callback_source",
+            "status": "callback_source_rejected",
             "success": False,
             "reason": decision.reason,
         },

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     daraja_circuit_breaker_recovery_seconds: float = 60.0
     callback_shared_secret: str | None = None
     callback_source_verification_mode: str = "development"
+    trusted_proxy_shared_secret: str | None = None
+    trusted_proxy_header_name: str = "X-Trusted-Callback-Proxy"
     callback_replay_protection_enabled: bool = True
     callback_replay_window_seconds: int = 600
     callback_replay_mode: str = "memory"
