@@ -109,7 +109,11 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Add PostgreSQL audit persistence.
 - [x] **Done:** Add unique idempotency lookup support.
 - [x] **Done:** Add provider-aware transaction fields.
-- [ ] **Todo:** Review production indexes for lookup-heavy fields.
+- [x] **Done:** Add database status check constraint for transaction states.
+- [x] **Done:** Add database uniqueness enforcement for idempotency keys.
+- [x] **Done:** Add database uniqueness enforcement for provider transaction IDs.
+- [x] **Done:** Add production lookup indexes for transaction and audit paths.
+- [ ] **Todo:** Add database-backed approval request persistence before adding approval request indexes.
 - [ ] **Todo:** Add production database backup strategy.
 - [ ] **Todo:** Test database restore process.
 - [ ] **Todo:** Define audit retention policy.

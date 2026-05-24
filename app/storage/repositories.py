@@ -8,10 +8,19 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.storage.database import SessionFactory
 from app.storage.models import TransactionModel
 from app.transactions.state_machine import validate_transition
+
+
+class TransactionIntegrityError(ValueError):
+    """Raised when persisted transaction integrity constraints are violated."""
+
+
+class DuplicateTransactionIntegrityError(TransactionIntegrityError):
+    """Raised when a unique transaction constraint is violated."""
 
 
 class PendingTransaction(BaseModel):
@@ -264,7 +273,11 @@ class PostgresTransactionRepository:
 
         with self._session_factory() as session:
             session.add(model)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise self._map_integrity_error(exc) from exc
             session.refresh(model)
             return self._to_pending_transaction(model)
 
@@ -321,7 +334,11 @@ class PostgresTransactionRepository:
             model.result_description = result_description
             model.mpesa_receipt_number = mpesa_receipt_number
             model.updated_at = datetime.now(UTC)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise self._map_integrity_error(exc) from exc
             session.refresh(model)
             return self._to_pending_transaction(model)
 
@@ -388,3 +405,17 @@ class PostgresTransactionRepository:
             result_description=model.result_description,
             mpesa_receipt_number=model.mpesa_receipt_number,
         )
+
+    def _map_integrity_error(self, exc: IntegrityError) -> TransactionIntegrityError:
+        message = str(exc.orig).lower()
+        if (
+            "unique" in message
+            or "duplicate" in message
+            or "uq_transactions" in message
+            or "ix_transactions_idempotency_key" in message
+        ):
+            return DuplicateTransactionIntegrityError(
+                "Transaction uniqueness constraint violated."
+            )
+
+        return TransactionIntegrityError("Transaction integrity constraint violated.")

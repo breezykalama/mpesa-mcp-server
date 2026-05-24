@@ -166,6 +166,7 @@ Key safeguards include:
 - **Multi-reviewer approval:** high-risk approvals can require multiple distinct operator reviews before payment execution.
 - **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
 - **Transaction state machine:** pending transactions can move only into terminal states, and terminal states cannot be overwritten by duplicate or late callbacks.
+- **Database integrity:** PostgreSQL models and migrations enforce critical transaction uniqueness and allowed status values.
 - **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
 - **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
 - **Callback trust validation:** callbacks must match a known transaction and any supplied amount or phone metadata must match the original request.
