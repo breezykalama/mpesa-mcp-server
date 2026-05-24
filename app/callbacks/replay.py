@@ -10,6 +10,8 @@ from typing import Any, Protocol, cast
 
 from redis import Redis
 
+from app.infrastructure.health import InfrastructureUnavailableError
+
 
 @dataclass(frozen=True)
 class ReplayDecision:
@@ -90,7 +92,13 @@ class RedisReplayProtection:
     def check_and_store(self, *, key: str, window_seconds: int) -> ReplayDecision:
         """Store a callback replay key if it has not already been seen."""
 
-        stored = self._redis.set(key, "1", ex=window_seconds, nx=True)
+        try:
+            stored = self._redis.set(key, "1", ex=window_seconds, nx=True)
+        except Exception as exc:
+            raise InfrastructureUnavailableError(
+                "Callback replay protection infrastructure is unavailable."
+            ) from exc
+
         if stored:
             return ReplayDecision(
                 allowed=True,

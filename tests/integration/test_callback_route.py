@@ -11,10 +11,18 @@ from app.bootstrap.container import AppContainer
 from app.callbacks.handlers import StkCallbackHandler
 from app.callbacks.routes import get_app_container, get_stk_callback_handler
 from app.config import Settings
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.main import app
 from app.observability.metrics import InMemoryMetricsRecorder
 from app.storage.repositories import InMemoryTransactionRepository
 from fastapi.testclient import TestClient
+
+
+class FailingReplayProtection:
+    """Replay protection fake that simulates Redis failure."""
+
+    def check_and_store(self, *, key: str, window_seconds: int) -> Any:
+        raise InfrastructureUnavailableError("Redis unavailable.")
 
 
 def test_fastapi_callback_route_returns_expected_response() -> None:
@@ -226,6 +234,24 @@ def test_duplicate_callback_writes_audit_event() -> None:
     assert str(container.audit_logger.events[-1].payload["replay_key"]).startswith(
         "callback_replay:"
     )
+
+
+def test_callback_replay_unavailable_rejects_callback() -> None:
+    container = build_callback_container(callback_shared_secret=None)
+    object.__setattr__(container, "replay_protection", FailingReplayProtection())
+    seed_route_transaction(container)
+
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        client = TestClient(app)
+        response = client.post("/callbacks/mpesa/stk", json=stk_callback_payload())
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "replay_protection_unavailable"
+    assert container.audit_logger.events[-1].event_type == "stk_callback_replay_unavailable"
 
 
 def test_malformed_callback_route_writes_audit_event() -> None:

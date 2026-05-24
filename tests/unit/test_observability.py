@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
 from app.bootstrap.container import AppContainer
 from app.callbacks.handlers import StkCallbackHandler
 from app.callbacks.routes import get_app_container
+from app.config import Settings
+from app.infrastructure.health import DependencyProbeResult
 from app.main import app
+from app.observability import health as health_module
 from app.storage.repositories import InMemoryTransactionRepository
 from fastapi.testclient import TestClient
 from tests.unit.test_receipt_service import seed_transaction
@@ -90,7 +94,12 @@ def test_health_endpoint_works() -> None:
 
 
 def test_readiness_endpoint_works() -> None:
-    container = AppContainer.mock()
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            operator_auth_enabled=False,
+        )
+    )
     app.dependency_overrides[get_app_container] = lambda: container
 
     try:
@@ -103,6 +112,45 @@ def test_readiness_endpoint_works() -> None:
     assert body["status"] == "ready"
     assert body["ready"] is True
     assert body["storage_mode"] == "memory"
+    assert body["dependencies"]["postgres"]["ok"] is True
+    assert body["dependencies"]["redis"]["ok"] is True
+
+
+def test_readiness_reports_dependency_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            operator_auth_enabled=False,
+        )
+    )
+    monkeypatch.setattr(
+        health_module,
+        "readiness_dependency_results",
+        lambda settings: [DependencyProbeResult("postgres", False, "down")],
+    )
+    app.dependency_overrides[get_app_container] = lambda: container
+
+    try:
+        response = TestClient(app).get("/health/ready")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "not_ready"
+    assert body["ready"] is False
+    assert body["dependencies"]["postgres"] == {"ok": False, "reason": "down"}
+
+    app.dependency_overrides[get_app_container] = lambda: container
+    try:
+        health_response = TestClient(app).get("/health")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert health_response.status_code == 200
+    assert health_response.json()["status"] == "ok"
 
 
 def test_metrics_endpoint_returns_expected_counters() -> None:

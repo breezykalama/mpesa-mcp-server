@@ -9,6 +9,8 @@ from typing import Protocol, cast
 
 from redis import Redis
 
+from app.infrastructure.health import InfrastructureUnavailableError
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,11 +108,24 @@ class RedisRateLimiter:
     def allow(self, *, key: str, limit: int, window_seconds: int) -> RateLimitDecision:
         """Return whether a key is allowed for the configured limit window."""
 
-        count = self._redis.incr(key)
-        if count == 1:
-            self._redis.expire(key, window_seconds)
+        try:
+            count = self._redis.incr(key)
+            if count == 1:
+                self._redis.expire(key, window_seconds)
 
-        ttl = self._redis.ttl(key)
+            ttl = self._redis.ttl(key)
+        except Exception as exc:
+            logger.exception(
+                "Redis rate limiter unavailable.",
+                extra={
+                    "event_type": "rate_limiter_unavailable",
+                    "status": "unavailable",
+                },
+            )
+            raise InfrastructureUnavailableError(
+                "Rate limiter infrastructure is unavailable."
+            ) from exc
+
         reset_after_seconds = window_seconds if ttl < 0 else ttl
 
         if count > limit:

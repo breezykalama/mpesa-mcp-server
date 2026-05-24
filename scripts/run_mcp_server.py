@@ -15,9 +15,12 @@ def main() -> None:
 
     from app.config import get_settings
     from app.config_validation import validate_startup_settings
+    from app.infrastructure.health import validate_startup_dependencies
     from app.mcp.server import run
 
-    validate_startup_settings(get_settings())
+    settings = get_settings()
+    validate_startup_settings(settings)
+    validate_startup_dependencies(settings)
     run()
 
 

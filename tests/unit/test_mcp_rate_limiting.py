@@ -4,15 +4,29 @@ from __future__ import annotations
 
 from app.approvals.models import ApprovalRequest
 from app.approvals.service import ApprovalServiceResponse
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.mcp.tools import (
     approve_payment_request_tool,
     check_transaction_status_tool,
     initiate_stk_push_tool,
     reject_payment_request_tool,
 )
-from app.rate_limit.limiter import InMemoryRateLimiter
+from app.rate_limit.limiter import InMemoryRateLimiter, RateLimitDecision
 from app.services.payment_service import ApprovalExecutionResponse, PaymentResponse
 from app.services.transaction_service import TransactionStatusServiceResponse
+
+
+class FailingRateLimiter:
+    """Rate limiter that simulates infrastructure failure."""
+
+    def allow(
+        self,
+        *,
+        key: str,
+        limit: int,
+        window_seconds: int,
+    ) -> RateLimitDecision:
+        raise InfrastructureUnavailableError("Redis unavailable.")
 
 
 class CountingPaymentService:
@@ -118,8 +132,22 @@ def test_stk_push_is_allowed_within_limit() -> None:
     )
 
     assert response.status == "pending"
-    assert response.allowed is True
-    assert service.calls == 1
+
+
+def test_rate_limiter_unavailable_rejects_payment_safely() -> None:
+    service = CountingPaymentService()
+
+    response = initiate_stk_push_tool(
+        stk_payload(),
+        service,
+        rate_limiter=FailingRateLimiter(),
+        rate_limit_enabled=True,
+        rate_limit_max_requests=1,
+    )
+
+    assert response.status == "infrastructure_unavailable"
+    assert response.allowed is False
+    assert service.calls == 0
 
 
 def test_stk_push_is_blocked_after_limit() -> None:

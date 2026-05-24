@@ -31,6 +31,19 @@ Outside development-like environments, `CALLBACK_SHARED_SECRET` must be configur
 
 Redis-backed modes require a valid `REDIS_URL`, and Postgres storage requires a PostgreSQL `DATABASE_URL`.
 
+## Dependency Failure Policy
+
+Configured critical dependencies are validated at startup.
+
+- If `STORAGE_MODE=postgres` and PostgreSQL is unavailable, startup fails.
+- If Redis-backed rate limiting or callback replay protection is enabled and Redis is unavailable, startup fails.
+- Runtime database failures are returned as safe service-unavailable responses.
+- Runtime Redis failures fail closed for safety-sensitive paths.
+- If callback replay protection is unavailable, callbacks are rejected.
+- If rate limiting is unavailable, sensitive MCP tool calls are rejected.
+
+The platform should not silently disable safety controls in production-like modes.
+
 ## CI Secret Scanning
 
 GitHub Actions runs gitleaks against the checked-out repository. The scan is intended to catch accidental credentials before they are merged or pushed further.
@@ -48,4 +61,3 @@ Production launch should include a documented rotation process for:
 - Redis credentials
 
 No production credential should be long-lived without an owner, expiry/rotation plan, and incident response path.
-

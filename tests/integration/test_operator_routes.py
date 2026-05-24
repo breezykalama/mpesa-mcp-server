@@ -5,9 +5,18 @@ from __future__ import annotations
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 from app.config import Settings
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.main import app
+from app.storage.repositories import PendingTransaction
 from fastapi.testclient import TestClient
 from httpx import Response
+
+
+class FailingTransactionRepository:
+    """Transaction repository fake that simulates database failure."""
+
+    def list_recent_transactions(self, limit: int = 50) -> list[PendingTransaction]:
+        raise InfrastructureUnavailableError("Transaction storage is unavailable.")
 
 
 def test_list_transactions() -> None:
@@ -61,6 +70,21 @@ def test_missing_transaction_returns_not_found() -> None:
         "status": "not_found",
         "reason": "Transaction was not found.",
     }
+
+
+def test_runtime_db_failure_returns_safe_service_unavailable() -> None:
+    container = build_operator_container()
+    object.__setattr__(
+        container,
+        "transaction_repository",
+        FailingTransactionRepository(),
+    )
+
+    response = request_with_container(container, "GET", "/operator/transactions")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "infrastructure_unavailable"
+    assert "Transaction storage is unavailable" in response.json()["reason"]
 
 
 def test_list_audit_events() -> None:

@@ -4,12 +4,14 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.approvals.routes import router as approval_router
 from app.callbacks.routes import router as callback_router
 from app.config import get_settings
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.logging.config import configure_logging
 from app.observability.health import router as observability_router
 from app.observability.tracing import CORRELATION_ID_HEADER, correlation_context
@@ -43,6 +45,27 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", CORRELATION_ID_HEADER],
 )
+
+
+@app.exception_handler(InfrastructureUnavailableError)
+async def infrastructure_unavailable_handler(
+    _request: Request,
+    exc: InfrastructureUnavailableError,
+) -> JSONResponse:
+    """Return a safe service unavailable response for dependency failures."""
+
+    logger.exception(
+        "Infrastructure dependency unavailable.",
+        extra={"event_type": "infrastructure_unavailable", "status": "unavailable"},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "status": "infrastructure_unavailable",
+            "success": False,
+            "reason": str(exc),
+        },
+    )
 
 
 @app.middleware("http")

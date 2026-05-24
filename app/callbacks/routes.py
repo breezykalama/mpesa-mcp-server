@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from app.bootstrap.container import AppContainer, create_app_container
 from app.callbacks.handlers import CallbackProcessingResult, StkCallbackHandler
 from app.callbacks.replay import build_callback_replay_key
+from app.infrastructure.health import InfrastructureUnavailableError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -95,7 +96,29 @@ def handle_stk_callback(
     if replay_response is not None:
         return replay_response
 
-    return handler.process(payload)
+    try:
+        return handler.process(payload)
+    except InfrastructureUnavailableError as exc:
+        container.audit_logger.log_event(
+            "stk_callback_infrastructure_unavailable",
+            {"reason": str(exc)},
+            actor="mpesa_callback",
+        )
+        logger.exception(
+            "Callback processing dependency unavailable.",
+            extra={
+                "event_type": "callback_infrastructure_unavailable",
+                "status": "unavailable",
+            },
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "infrastructure_unavailable",
+                "success": False,
+                "reason": str(exc),
+            },
+        )
 
 
 def reject_untrusted_callback_source_if_needed(
@@ -137,10 +160,33 @@ def reject_duplicate_callback_if_needed(
         return None
 
     replay_key = build_callback_replay_key(payload)
-    decision = container.replay_protection.check_and_store(
-        key=replay_key,
-        window_seconds=container.settings.callback_replay_window_seconds,
-    )
+    try:
+        decision = container.replay_protection.check_and_store(
+            key=replay_key,
+            window_seconds=container.settings.callback_replay_window_seconds,
+        )
+    except InfrastructureUnavailableError as exc:
+        container.audit_logger.log_event(
+            "stk_callback_replay_unavailable",
+            {"reason": str(exc)},
+            actor="mpesa_callback",
+        )
+        logger.exception(
+            "Callback replay protection unavailable; callback rejected.",
+            extra={
+                "event_type": "callback_replay_unavailable",
+                "status": "unavailable",
+            },
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "replay_protection_unavailable",
+                "success": False,
+                "reason": "Callback replay protection unavailable.",
+            },
+        )
+
     if decision.allowed:
         return None
 

@@ -129,6 +129,10 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Add startup validation for operator auth configuration.
 - [x] **Done:** Add startup validation for callback shared secret outside development.
 - [x] **Done:** Add startup validation for Redis and Postgres mode configuration.
+- [x] **Done:** Add startup dependency validation for configured Postgres and Redis modes.
+- [x] **Done:** Add graceful infrastructure failure policy for Postgres and Redis outages.
+- [x] **Done:** Fail closed when Redis-backed rate limiting or callback replay protection is unavailable.
+- [x] **Done:** Strengthen readiness checks with dependency details.
 - [x] **Done:** Add CI secret scanning with gitleaks.
 - [x] **Done:** Add security model documentation for secret handling expectations.
 - [ ] **Todo:** Use a real secret manager for production credentials.

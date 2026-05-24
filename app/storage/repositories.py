@@ -8,8 +8,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from app.infrastructure.health import InfrastructureUnavailableError
 from app.storage.database import SessionFactory
 from app.storage.models import TransactionModel
 from app.transactions.state_machine import validate_transition
@@ -272,41 +273,57 @@ class PostgresTransactionRepository:
         )
 
         with self._session_factory() as session:
-            session.add(model)
             try:
+                session.add(model)
                 session.commit()
             except IntegrityError as exc:
                 session.rollback()
                 raise self._map_integrity_error(exc) from exc
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise InfrastructureUnavailableError(
+                    "Transaction storage is unavailable."
+                ) from exc
             session.refresh(model)
             return self._to_pending_transaction(model)
 
     def get_transaction(self, transaction_id: str) -> PendingTransaction | None:
         """Return a transaction by ID if it exists."""
 
-        with self._session_factory() as session:
-            model = session.get(TransactionModel, transaction_id)
-            return self._to_pending_transaction(model) if model is not None else None
+        try:
+            with self._session_factory() as session:
+                model = session.get(TransactionModel, transaction_id)
+                return self._to_pending_transaction(model) if model is not None else None
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def find_by_checkout_request_id(self, checkout_request_id: str) -> PendingTransaction | None:
         """Return a transaction by checkout request ID if it exists."""
 
-        with self._session_factory() as session:
-            model = session.scalar(
-                select(TransactionModel).where(
-                    TransactionModel.checkout_request_id == checkout_request_id
+        try:
+            with self._session_factory() as session:
+                model = session.scalar(
+                    select(TransactionModel).where(
+                        TransactionModel.checkout_request_id == checkout_request_id
+                    )
                 )
-            )
-            return self._to_pending_transaction(model) if model is not None else None
+                return self._to_pending_transaction(model) if model is not None else None
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def find_by_idempotency_key(self, idempotency_key: str) -> PendingTransaction | None:
         """Return a transaction by idempotency key if it exists."""
 
-        with self._session_factory() as session:
-            model = session.scalar(
-                select(TransactionModel).where(TransactionModel.idempotency_key == idempotency_key)
-            )
-            return self._to_pending_transaction(model) if model is not None else None
+        try:
+            with self._session_factory() as session:
+                model = session.scalar(
+                    select(TransactionModel).where(
+                        TransactionModel.idempotency_key == idempotency_key
+                    )
+                )
+                return self._to_pending_transaction(model) if model is not None else None
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def update_transaction_status(
         self,
@@ -319,55 +336,65 @@ class PostgresTransactionRepository:
     ) -> PendingTransaction | None:
         """Update and return a transaction status if it exists."""
 
-        with self._session_factory() as session:
-            model = session.scalar(
-                select(TransactionModel).where(
-                    TransactionModel.checkout_request_id == checkout_request_id
+        try:
+            with self._session_factory() as session:
+                model = session.scalar(
+                    select(TransactionModel).where(
+                        TransactionModel.checkout_request_id == checkout_request_id
+                    )
                 )
-            )
-            if model is None:
-                return None
-            validate_transition(model.status, status)
+                if model is None:
+                    return None
+                validate_transition(model.status, status)
 
-            model.status = status
-            model.result_code = result_code
-            model.result_description = result_description
-            model.mpesa_receipt_number = mpesa_receipt_number
-            model.updated_at = datetime.now(UTC)
-            try:
+                model.status = status
+                model.result_code = result_code
+                model.result_description = result_description
+                model.mpesa_receipt_number = mpesa_receipt_number
+                model.updated_at = datetime.now(UTC)
                 session.commit()
-            except IntegrityError as exc:
-                session.rollback()
-                raise self._map_integrity_error(exc) from exc
-            session.refresh(model)
-            return self._to_pending_transaction(model)
+                session.refresh(model)
+                return self._to_pending_transaction(model)
+        except IntegrityError as exc:
+            raise self._map_integrity_error(exc) from exc
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def list_transactions(self) -> list[PendingTransaction]:
         """Return all transactions."""
 
-        with self._session_factory() as session:
-            models = session.scalars(select(TransactionModel)).all()
-            return [self._to_pending_transaction(model) for model in models]
+        try:
+            with self._session_factory() as session:
+                models = session.scalars(select(TransactionModel)).all()
+                return [self._to_pending_transaction(model) for model in models]
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def list_recent_transactions(self, limit: int = 50) -> list[PendingTransaction]:
         """Return recent transactions."""
 
-        with self._session_factory() as session:
-            models = session.scalars(
-                select(TransactionModel)
-                .order_by(TransactionModel.created_at.desc())
-                .limit(limit)
-            ).all()
-            return [self._to_pending_transaction(model) for model in models]
+        try:
+            with self._session_factory() as session:
+                models = session.scalars(
+                    select(TransactionModel)
+                    .order_by(TransactionModel.created_at.desc())
+                    .limit(limit)
+                ).all()
+                return [self._to_pending_transaction(model) for model in models]
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def list_transactions_by_status(self, status: str) -> list[PendingTransaction]:
         """Return transactions matching a status."""
 
-        with self._session_factory() as session:
-            models = session.scalars(
-                select(TransactionModel).where(TransactionModel.status == status)
-            ).all()
-            return [self._to_pending_transaction(model) for model in models]
+        try:
+            with self._session_factory() as session:
+                models = session.scalars(
+                    select(TransactionModel).where(TransactionModel.status == status)
+                ).all()
+                return [self._to_pending_transaction(model) for model in models]
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def list_transactions_for_date(self, target_date: date) -> list[PendingTransaction]:
         """Return transactions created on a specific date."""
@@ -375,14 +402,17 @@ class PostgresTransactionRepository:
         start = datetime.combine(target_date, datetime.min.time(), tzinfo=UTC)
         end = datetime.combine(target_date, datetime.max.time(), tzinfo=UTC)
 
-        with self._session_factory() as session:
-            models = session.scalars(
-                select(TransactionModel).where(
-                    TransactionModel.created_at >= start,
-                    TransactionModel.created_at <= end,
-                )
-            ).all()
-            return [self._to_pending_transaction(model) for model in models]
+        try:
+            with self._session_factory() as session:
+                models = session.scalars(
+                    select(TransactionModel).where(
+                        TransactionModel.created_at >= start,
+                        TransactionModel.created_at <= end,
+                    )
+                ).all()
+                return [self._to_pending_transaction(model) for model in models]
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError("Transaction storage is unavailable.") from exc
 
     def _to_pending_transaction(self, model: TransactionModel) -> PendingTransaction:
         return PendingTransaction(
