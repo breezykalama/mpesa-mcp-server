@@ -7,7 +7,11 @@ from typing import Any
 
 import httpx
 from app.config import Settings
-from app.daraja.client import RealDarajaClient
+from app.daraja.client import (
+    DarajaCircuitBreaker,
+    RealDarajaClient,
+    TransactionStatusResponse,
+)
 
 
 def sandbox_settings() -> Settings:
@@ -23,6 +27,24 @@ def sandbox_settings() -> Settings:
         daraja_security_credential="encrypted-credential",
         daraja_transaction_status_result_url="https://example.test/status/result",
         daraja_transaction_status_timeout_url="https://example.test/status/timeout",
+        daraja_retry_backoff_seconds=0,
+    )
+
+
+def production_settings() -> Settings:
+    return Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        daraja_mode="production",
+        daraja_production_consumer_key="prod-consumer-key",
+        daraja_production_consumer_secret="prod-consumer-secret",
+        daraja_production_passkey="prod-passkey",
+        daraja_production_shortcode="123456",
+        daraja_production_callback_url="https://payments.example.test/callback",
+        daraja_initiator_name="prodapi",
+        daraja_security_credential="encrypted-production-credential",
+        daraja_transaction_status_result_url="https://payments.example.test/status/result",
+        daraja_transaction_status_timeout_url="https://payments.example.test/status/timeout",
+        daraja_retry_backoff_seconds=0,
     )
 
 
@@ -67,6 +89,83 @@ def test_real_daraja_client_retrieves_oauth_token_and_initiates_stk_push() -> No
     assert stk_payloads[0]["PhoneNumber"] == "254700000000"
     assert stk_payloads[0]["Amount"] == 1_000
     assert stk_payloads[0]["CallBackURL"] == "https://example.test/callback"
+
+
+def test_real_daraja_client_selects_sandbox_base_url() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        return httpx.Response(
+            200,
+            json={
+                "ResponseCode": "0",
+                "ResponseDescription": "Accepted.",
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=sandbox_settings(), http_client=http_client)
+
+    response = client.check_transaction_status("LKXXXX1234")
+
+    assert response.status == "query_accepted"
+    assert requests[0].url.host == "sandbox.safaricom.co.ke"
+    assert requests[1].url.host == "sandbox.safaricom.co.ke"
+
+
+def test_real_daraja_client_selects_production_base_url() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "production-token"})
+
+        return httpx.Response(
+            200,
+            json={
+                "ResponseCode": "0",
+                "ResponseDescription": "Accepted.",
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=production_settings(), http_client=http_client)
+
+    response = client.check_transaction_status("LKXXXX1234")
+
+    assert response.status == "query_accepted"
+    assert requests[0].url.host == "api.safaricom.co.ke"
+    assert requests[1].headers["Authorization"] == "Bearer production-token"
+
+
+def test_production_mode_missing_credentials_fails_cleanly_without_live_call() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    try:
+        RealDarajaClient(
+            settings=Settings(
+                database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+                daraja_mode="production",
+            ),
+            http_client=http_client,
+        )
+    except ValueError as exc:
+        assert "DARAJA_PRODUCTION_CONSUMER_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected missing production credentials to raise.")
+
+    assert requests == []
 
 
 def test_real_daraja_transaction_status_sends_expected_request() -> None:
@@ -127,6 +226,95 @@ def test_real_daraja_transaction_status_non_zero_response_maps_to_failed() -> No
     assert response.status == "failed"
     assert response.result_code == "1"
     assert response.result_description == "Request failed."
+
+
+def test_real_daraja_oauth_timeout_is_handled() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.TimeoutException("oauth timeout", request=request)
+
+    settings = sandbox_settings().model_copy(
+        update={"daraja_max_retries": 0, "daraja_retry_backoff_seconds": 0}
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=settings, http_client=http_client)
+
+    response = client.check_transaction_status("LKXXXX1234")
+
+    assert response.status == "failed"
+    assert response.error_category == "timeout"
+    assert "timed out" in response.result_description
+
+
+def test_real_daraja_transaction_status_timeout_is_handled() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        raise httpx.TimeoutException("status timeout", request=request)
+
+    settings = sandbox_settings().model_copy(
+        update={"daraja_max_retries": 0, "daraja_retry_backoff_seconds": 0}
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=settings, http_client=http_client)
+
+    response = client.check_transaction_status("LKXXXX1234")
+
+    assert response.status == "failed"
+    assert response.error_category == "timeout"
+    assert "timed out" in response.result_description
+
+
+def test_real_daraja_transaction_status_401_maps_to_auth_error() -> None:
+    response = transaction_status_error_response(401)
+
+    assert response.status == "failed"
+    assert response.error_category == "auth_error"
+
+
+def test_real_daraja_transaction_status_429_maps_to_rate_limited() -> None:
+    response = transaction_status_error_response(429)
+
+    assert response.status == "failed"
+    assert response.error_category == "rate_limited"
+
+
+def test_real_daraja_transaction_status_503_maps_to_provider_unavailable() -> None:
+    response = transaction_status_error_response(503)
+
+    assert response.status == "failed"
+    assert response.error_category == "provider_unavailable"
+
+
+def test_real_daraja_retries_oauth_transient_failure() -> None:
+    oauth_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal oauth_calls
+        if request.url.path == "/oauth/v1/generate":
+            oauth_calls += 1
+            if oauth_calls == 1:
+                return httpx.Response(503, request=request, json={"errorMessage": "Busy"})
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        return httpx.Response(
+            200,
+            json={
+                "ResponseCode": "0",
+                "ResponseDescription": "Accepted.",
+            },
+        )
+
+    settings = sandbox_settings().model_copy(
+        update={"daraja_max_retries": 1, "daraja_retry_backoff_seconds": 0}
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=settings, http_client=http_client)
+
+    response = client.check_transaction_status("LKXXXX1234")
+
+    assert response.status == "query_accepted"
+    assert oauth_calls == 2
 
 
 def test_real_daraja_transaction_status_missing_credentials_raises_cleanly() -> None:
@@ -202,6 +390,101 @@ def test_real_daraja_transaction_status_invalid_json_returns_failed() -> None:
     assert response.result_description == "Daraja transaction status response was not valid JSON."
 
 
+def test_daraja_circuit_breaker_opens_after_repeated_failures() -> None:
+    status_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal status_calls
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        status_calls += 1
+        return httpx.Response(503, request=request, json={"errorMessage": "Unavailable"})
+
+    settings = sandbox_settings().model_copy(
+        update={
+            "daraja_max_retries": 0,
+            "daraja_retry_backoff_seconds": 0,
+            "daraja_circuit_breaker_failure_threshold": 2,
+        }
+    )
+    circuit_breaker = DarajaCircuitBreaker(
+        enabled=True,
+        failure_threshold=2,
+        recovery_seconds=60,
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(
+        settings=settings,
+        http_client=http_client,
+        circuit_breaker=circuit_breaker,
+    )
+
+    first_response = client.check_transaction_status("LKXXXX1234")
+    second_response = client.check_transaction_status("LKXXXX1234")
+    third_response = client.check_transaction_status("LKXXXX1234")
+
+    assert first_response.error_category == "provider_unavailable"
+    assert second_response.error_category == "provider_unavailable"
+    assert third_response.error_category == "provider_unavailable"
+    assert "circuit breaker is open" in third_response.result_description
+    assert circuit_breaker.state == "open"
+    assert status_calls == 2
+
+
+def test_daraja_circuit_breaker_recovers_after_window() -> None:
+    now = 0.0
+    status_should_succeed = False
+
+    def clock() -> float:
+        return now
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        if status_should_succeed:
+            return httpx.Response(
+                200,
+                json={
+                    "ResponseCode": "0",
+                    "ResponseDescription": "Accepted.",
+                },
+            )
+
+        return httpx.Response(503, request=request, json={"errorMessage": "Unavailable"})
+
+    settings = sandbox_settings().model_copy(
+        update={
+            "daraja_max_retries": 0,
+            "daraja_retry_backoff_seconds": 0,
+            "daraja_circuit_breaker_failure_threshold": 1,
+            "daraja_circuit_breaker_recovery_seconds": 30,
+        }
+    )
+    circuit_breaker = DarajaCircuitBreaker(
+        enabled=True,
+        failure_threshold=1,
+        recovery_seconds=30,
+        clock=clock,
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(
+        settings=settings,
+        http_client=http_client,
+        circuit_breaker=circuit_breaker,
+    )
+
+    failed_response = client.check_transaction_status("LKXXXX1234")
+    now = 31.0
+    status_should_succeed = True
+    recovered_response = client.check_transaction_status("LKXXXX1234")
+
+    assert failed_response.error_category == "provider_unavailable"
+    assert recovered_response.status == "query_accepted"
+    assert circuit_breaker.state == "closed"
+
+
 def test_real_daraja_client_requires_sandbox_credentials() -> None:
     client = RealDarajaClient(
         settings=Settings(
@@ -224,3 +507,23 @@ def test_real_daraja_client_requires_sandbox_credentials() -> None:
         assert "DARAJA_CONSUMER_KEY" in str(exc)
     else:
         raise AssertionError("Expected missing sandbox credentials to raise ValueError.")
+
+
+def transaction_status_error_response(status_code: int) -> TransactionStatusResponse:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/oauth/v1/generate":
+            return httpx.Response(200, json={"access_token": "sandbox-token"})
+
+        return httpx.Response(
+            status_code,
+            request=request,
+            json={"errorMessage": f"HTTP {status_code}"},
+        )
+
+    settings = sandbox_settings().model_copy(
+        update={"daraja_max_retries": 0, "daraja_retry_backoff_seconds": 0}
+    )
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = RealDarajaClient(settings=settings, http_client=http_client)
+
+    return client.check_transaction_status("LKXXXX1234")

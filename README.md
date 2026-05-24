@@ -290,9 +290,21 @@ Mock mode remains available for fast local development, CI, and safe demos:
 
 This makes the system deterministic, fast to test, and safe to demo without live payment credentials. Outside mock mode, the project also includes Daraja sandbox, PostgreSQL, Redis, and provider-aware transaction storage adapters.
 
-## Daraja Sandbox Support
+## Daraja Sandbox And Production-Mode Hardening
 
-`RealDarajaClient` supports sandbox OAuth token retrieval, STK Push initiation, and Transaction Status query submission. Production mode is intentionally not enabled.
+`RealDarajaClient` supports sandbox OAuth token retrieval, STK Push initiation, and Transaction Status query submission.
+
+The client is also production-mode capable behind `DARAJA_MODE=production`, but production use still requires Safaricom production onboarding, real production credentials, callback validation, and a controlled low-value real-money validation before launch. No production credentials should ever be committed.
+
+Daraja hardening includes:
+
+- separate sandbox and production base URLs
+- separate sandbox and production credential variables with backwards-compatible fallbacks
+- configured HTTP timeouts
+- retry support for OAuth and transaction status transient failures
+- conservative STK Push retry behavior; STK Push is not retried by the Daraja client unless the platform can prove the request is safe through idempotency context
+- a small circuit breaker for provider outages
+- normalized provider error categories such as `auth_error`, `validation_error`, `timeout`, `rate_limited`, and `provider_unavailable`
 
 For transaction status, Daraja expects an M-Pesa transaction ID or another suitable Daraja transaction reference. The public project method remains `check_transaction_status(checkout_request_id)` for compatibility, but sandbox status checks should be called with the correct Daraja transaction reference once real transaction IDs are available.
 
@@ -346,11 +358,23 @@ DATABASE_URL=postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp
 STORAGE_MODE=memory
 
 DARAJA_MODE=mock
+DARAJA_SANDBOX_BASE_URL=https://sandbox.safaricom.co.ke
+DARAJA_PRODUCTION_BASE_URL=https://api.safaricom.co.ke
 DARAJA_CONSUMER_KEY=
 DARAJA_CONSUMER_SECRET=
 DARAJA_PASSKEY=
 DARAJA_SHORTCODE=
 DARAJA_CALLBACK_URL=
+DARAJA_SANDBOX_CONSUMER_KEY=
+DARAJA_SANDBOX_CONSUMER_SECRET=
+DARAJA_SANDBOX_PASSKEY=
+DARAJA_SANDBOX_SHORTCODE=
+DARAJA_SANDBOX_CALLBACK_URL=
+DARAJA_PRODUCTION_CONSUMER_KEY=
+DARAJA_PRODUCTION_CONSUMER_SECRET=
+DARAJA_PRODUCTION_PASSKEY=
+DARAJA_PRODUCTION_SHORTCODE=
+DARAJA_PRODUCTION_CALLBACK_URL=
 DARAJA_INITIATOR_NAME=
 DARAJA_SECURITY_CREDENTIAL=
 DARAJA_TRANSACTION_STATUS_RESULT_URL=
@@ -358,6 +382,12 @@ DARAJA_TRANSACTION_STATUS_TIMEOUT_URL=
 DARAJA_IDENTIFIER_TYPE=4
 DARAJA_TRANSACTION_STATUS_REMARKS=Transaction status query
 DARAJA_TRANSACTION_STATUS_OCCASION=Mpesa MCP status check
+DARAJA_REQUEST_TIMEOUT_SECONDS=10
+DARAJA_MAX_RETRIES=2
+DARAJA_RETRY_BACKOFF_SECONDS=0.5
+DARAJA_CIRCUIT_BREAKER_ENABLED=true
+DARAJA_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+DARAJA_CIRCUIT_BREAKER_RECOVERY_SECONDS=60
 CALLBACK_SHARED_SECRET=
 
 MAX_STK_AMOUNT=10000
@@ -557,6 +587,7 @@ Agent calls get_today_summary
 - Daraja OAuth token handling
 - STK Push sandbox request submission
 - Daraja transaction status query submission
+- Daraja production-mode configuration, timeouts, retries, circuit breaker, and normalized errors
 - Airtel Money mock provider to prove the multi-rail architecture
 
 **Persistence and infrastructure**
@@ -608,7 +639,7 @@ Agent calls get_today_summary
 - configurable limits per environment or merchant
 - provider/source verification strategy
 - payload integrity checks
-- retry policy and production hardening for Daraja calls
+- controlled low-value Daraja production validation
 - SSO/OAuth-backed operator identity
 - receipt PDF export
 - more payment rails beyond Daraja and Airtel mock

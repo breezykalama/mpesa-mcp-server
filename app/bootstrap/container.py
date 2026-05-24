@@ -155,10 +155,10 @@ class AppContainer:
         if settings.daraja_mode == "mock":
             return MockDarajaClient()
 
-        if settings.daraja_mode == "sandbox":
+        if settings.daraja_mode in {"sandbox", "production"}:
             return RealDarajaClient(settings=settings)
 
-        raise ValueError("DARAJA_MODE must be one of: mock, sandbox.")
+        raise ValueError("DARAJA_MODE must be one of: mock, sandbox, production.")
 
     @staticmethod
     def _create_payment_provider(

@@ -92,6 +92,22 @@ def test_container_selects_real_daraja_client_for_sandbox_mode() -> None:
     assert isinstance(container.daraja_client, RealDarajaClient)
 
 
+def test_container_selects_real_daraja_client_for_production_mode() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+            daraja_mode="production",
+            daraja_production_consumer_key="consumer-key",
+            daraja_production_consumer_secret="consumer-secret",
+            daraja_production_passkey="passkey",
+            daraja_production_shortcode="174379",
+            daraja_production_callback_url="https://example.test/callback",
+        )
+    )
+
+    assert isinstance(container.daraja_client, RealDarajaClient)
+
+
 def test_container_selects_airtel_money_mock_provider() -> None:
     container = AppContainer.mock(
         settings=Settings(

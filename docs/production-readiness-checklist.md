@@ -20,7 +20,7 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Isolate business logic in services, policies, handlers, and providers.
 - [x] **Done:** Preserve mock mode for local development and tests.
 - [x] **Done:** Add provider abstraction for payment execution.
-- [x] **Done:** Keep Daraja production mode disabled by default.
+- [x] **Done:** Keep Daraja production mode disabled unless explicitly configured.
 - [ ] **Todo:** Define the first real-money test scenario.
 - [ ] **Todo:** Define the first real-money operator group.
 - [ ] **Todo:** Define the first real-money maximum transaction amount.
@@ -34,15 +34,16 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Implement Daraja sandbox Transaction Status submission.
 - [x] **Done:** Keep Daraja sandbox behavior covered by mocked HTTP tests.
 - [ ] **Todo:** Obtain production Safaricom Daraja credentials.
-- [ ] **Todo:** Add carefully gated `DARAJA_MODE=production`.
-- [ ] **Todo:** Separate sandbox and production credentials.
+- [x] **Done:** Add carefully gated `DARAJA_MODE=production`.
+- [x] **Done:** Separate sandbox and production credentials with backwards-compatible fallback variables.
 - [ ] **Todo:** Validate production OAuth token flow with controlled credentials.
 - [ ] **Todo:** Validate production STK Push with a low-value controlled test.
 - [ ] **Todo:** Validate production transaction status with the correct Daraja transaction reference.
 - [ ] **Todo:** Confirm production shortcode/till/paybill configuration.
 - [ ] **Todo:** Confirm production callback URLs.
 - [ ] **Todo:** Confirm production security credential generation process.
-- [ ] **Todo:** Add production Daraja setup documentation.
+- [x] **Done:** Document production-mode configuration and hardening behavior.
+- [ ] **Todo:** Add full production Daraja onboarding/setup runbook.
 
 ### Payment Safety
 
@@ -173,10 +174,10 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Handle Daraja HTTP/network failures with clean failed responses for implemented flows.
 - [x] **Done:** Handle invalid Daraja JSON responses for transaction status.
 - [ ] **Todo:** Add provider timeout settings per call.
-- [ ] **Todo:** Add retry policy with backoff for safe retryable failures.
-- [ ] **Todo:** Avoid unsafe retries for non-idempotent operations.
-- [ ] **Todo:** Add circuit breaker for Daraja outages.
-- [ ] **Todo:** Add provider error classification.
+- [x] **Done:** Add retry policy with backoff for OAuth and transaction status transient failures.
+- [x] **Done:** Avoid retrying STK Push in the Daraja client without explicit idempotency safety context.
+- [x] **Done:** Add circuit breaker for Daraja outages.
+- [x] **Done:** Add provider error classification.
 - [ ] **Todo:** Add provider latency metrics.
 
 ### Reconciliation
@@ -375,4 +376,3 @@ Before any controlled real-money launch, verify:
 - [ ] **Todo:** Backup and restore process is tested.
 - [ ] **Todo:** Rollback process is documented.
 - [ ] **Todo:** First low-value production transaction test plan is approved.
-

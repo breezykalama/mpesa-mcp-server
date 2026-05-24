@@ -21,6 +21,9 @@ class PaymentInitiationResponse(BaseModel):
     provider_reference: str | None = None
     response_code: str
     response_description: str
+    status: str = "pending"
+    error_category: str | None = None
+    raw_response: dict[str, object] | None = None
 
 
 class PaymentStatusResponse(BaseModel):
@@ -34,6 +37,8 @@ class PaymentStatusResponse(BaseModel):
     result_code: str
     result_description: str
     status: str
+    error_category: str | None = None
+    raw_response: dict[str, object] | None = None
 
 
 class PaymentProviderProtocol(Protocol):
@@ -84,6 +89,9 @@ class DarajaPaymentProvider:
             provider_reference=response.merchant_request_id,
             response_code=response.response_code,
             response_description=response.response_description,
+            status=response.status,
+            error_category=response.error_category,
+            raw_response=response.raw_response,
         )
 
     def check_transaction_status(self, transaction_reference: str) -> PaymentStatusResponse:
@@ -99,6 +107,8 @@ class DarajaPaymentProvider:
             result_code=response.result_code,
             result_description=response.result_description,
             status=response.status,
+            error_category=response.error_category,
+            raw_response=response.raw_response,
         )
 
 
