@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     operator_approver_token: str | None = None
     operator_admin_token: str | None = None
     approval_expiry_minutes: int = 30
+    approval_required_reviewers: int = 1
+    high_risk_approval_required_reviewers: int = 2
+    high_risk_amount_threshold: int = 50_000
 
     model_config = SettingsConfigDict(
         env_file=".env",

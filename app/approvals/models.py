@@ -22,3 +22,6 @@ class ApprovalRequest(BaseModel):
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     reviewed_at: datetime | None = None
     expired_at: datetime | None = None
+    required_reviewers: int = 1
+    reviewer_ids: list[str] = Field(default_factory=list)
+    review_count: int = 0

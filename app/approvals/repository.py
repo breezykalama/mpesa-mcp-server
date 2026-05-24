@@ -19,6 +19,7 @@ class ApprovalRepositoryProtocol(Protocol):
         payload: dict[str, object],
         reason: str,
         expires_at: datetime,
+        required_reviewers: int = 1,
     ) -> ApprovalRequest:
         """Create an approval request."""
 
@@ -36,6 +37,9 @@ class ApprovalRepositoryProtocol(Protocol):
     ) -> ApprovalRequest | None:
         """Update approval status."""
 
+    def save(self, approval: ApprovalRequest) -> ApprovalRequest:
+        """Persist and return an approval request."""
+
 
 class InMemoryApprovalRepository:
     """In-memory approval repository."""
@@ -50,6 +54,7 @@ class InMemoryApprovalRepository:
         payload: dict[str, object],
         reason: str,
         expires_at: datetime,
+        required_reviewers: int = 1,
     ) -> ApprovalRequest:
         """Create an approval request."""
 
@@ -59,6 +64,7 @@ class InMemoryApprovalRepository:
             payload=payload,
             reason=reason,
             expires_at=expires_at,
+            required_reviewers=required_reviewers,
         )
         self._approvals[approval.approval_id] = approval
         return approval
@@ -99,3 +105,9 @@ class InMemoryApprovalRepository:
         updated_approval = approval.model_copy(update=update_payload)
         self._approvals[approval_id] = updated_approval
         return updated_approval
+
+    def save(self, approval: ApprovalRequest) -> ApprovalRequest:
+        """Persist and return an approval request."""
+
+        self._approvals[approval.approval_id] = approval
+        return approval

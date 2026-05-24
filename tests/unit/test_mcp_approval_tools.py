@@ -15,7 +15,11 @@ class RecordingApprovalService:
         self.approved_id: str | None = None
         self.rejected_id: str | None = None
 
-    def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+    def execute_approved_payment(
+        self,
+        approval_id: str,
+        operator_id: str = "system_operator",
+    ) -> ApprovalExecutionResponse:
         self.approved_id = approval_id
         return ApprovalExecutionResponse(
             status="approved",
@@ -66,7 +70,11 @@ def test_approve_payment_request_tool_delegates() -> None:
 
 def test_approve_payment_request_tool_handles_expired_approval() -> None:
     class ExpiredApprovalService:
-        def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+        def execute_approved_payment(
+            self,
+            approval_id: str,
+            operator_id: str = "system_operator",
+        ) -> ApprovalExecutionResponse:
             return ApprovalExecutionResponse(
                 status="expired",
                 allowed=False,

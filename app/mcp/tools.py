@@ -94,7 +94,11 @@ class AnalyticsServiceProtocol(Protocol):
 class ApprovalExecutionServiceProtocol(Protocol):
     """Service contract required by approval execution MCP tools."""
 
-    def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+    def execute_approved_payment(
+        self,
+        approval_id: str,
+        operator_id: str = "system_operator",
+    ) -> ApprovalExecutionResponse:
         """Approve and execute a payment request."""
 
 
@@ -512,7 +516,10 @@ def approve_payment_request_tool(
         return rate_limit_response
 
     _log_tool_event("approve_payment_request", "mcp_tool_delegated")
-    execution_response = payment_service.execute_approved_payment(tool_input.approval_id)
+    execution_response = payment_service.execute_approved_payment(
+        tool_input.approval_id,
+        operator_id="mcp_operator",
+    )
     return _approval_execution_response_to_mcp_response(execution_response)
 
 

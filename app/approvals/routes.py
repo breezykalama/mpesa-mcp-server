@@ -103,11 +103,14 @@ def get_approval(
 def approve_payment_request(
     approval_id: str,
     payment_service: Annotated[PaymentService, Depends(get_payment_service)],
-    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
+    principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalExecutionResponse | JSONResponse:
     """Approve and execute an approval request."""
 
-    response = payment_service.execute_approved_payment(approval_id)
+    response = payment_service.execute_approved_payment(
+        approval_id,
+        operator_id=principal.operator_id,
+    )
     logger.info(
         "Approval approve endpoint completed.",
         extra={

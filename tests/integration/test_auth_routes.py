@@ -141,6 +141,40 @@ def test_admin_can_do_everything() -> None:
     assert approval_response.json()["status"] == "approved"
 
 
+def test_high_risk_approval_requires_two_distinct_operator_reviews() -> None:
+    container = build_auth_container()
+    approval_id = create_pending_approval(container, amount=50_000)
+
+    first_response = request_with_container(
+        container,
+        "POST",
+        f"/approvals/{approval_id}/approve",
+        token=APPROVER_TOKEN,
+    )
+    duplicate_response = request_with_container(
+        container,
+        "POST",
+        f"/approvals/{approval_id}/approve",
+        token=APPROVER_TOKEN,
+    )
+    second_response = request_with_container(
+        container,
+        "POST",
+        f"/approvals/{approval_id}/approve",
+        token=ADMIN_TOKEN,
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.json()["status"] == "partially_approved"
+    assert first_response.json()["approval"]["review_count"] == 1
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json()["status"] == "blocked"
+    assert second_response.status_code == 200
+    assert second_response.json()["status"] == "approved"
+    assert second_response.json()["approval"]["review_count"] == 2
+    assert second_response.json()["payment"]["status"] == "pending"
+
+
 def test_auth_disabled_allows_local_access() -> None:
     container = build_auth_container(operator_auth_enabled=False)
 
@@ -195,10 +229,10 @@ def seed_transaction(container: AppContainer) -> str:
     return transaction.transaction_id
 
 
-def create_pending_approval(container: AppContainer) -> str:
+def create_pending_approval(container: AppContainer, *, amount: int = 10_001) -> str:
     response = container.payment_service.initiate_stk_push(
         phone_number="254700000000",
-        amount=10_001,
+        amount=amount,
         account_reference="INV-AUTH-APPROVAL-001",
         description="Auth approval route test payment",
         idempotency_key=f"auth-approval-{len(container.audit_logger.events)}",

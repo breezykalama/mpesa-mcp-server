@@ -37,6 +37,9 @@ export interface ApprovalRequest {
   expires_at: string;
   reviewed_at: string | null;
   expired_at: string | null;
+  required_reviewers: number;
+  reviewer_ids: string[];
+  review_count: number;
 }
 
 export interface ReconciliationFinding {

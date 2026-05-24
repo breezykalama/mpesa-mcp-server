@@ -93,6 +93,11 @@ class AppContainer:
             approval_repository=approval_repository,
             audit_logger=audit_logger,
             expiry_minutes=resolved_settings.approval_expiry_minutes,
+            required_reviewers=resolved_settings.approval_required_reviewers,
+            high_risk_required_reviewers=(
+                resolved_settings.high_risk_approval_required_reviewers
+            ),
+            high_risk_amount_threshold=resolved_settings.high_risk_amount_threshold,
         )
 
         return cls(

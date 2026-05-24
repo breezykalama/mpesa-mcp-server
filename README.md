@@ -58,7 +58,7 @@ It does not currently:
 
 - enable production Safaricom Daraja mode
 - cryptographically verify callback signatures or source IPs
-- provide enterprise-grade approval controls such as expiry, multi-reviewer rules, or SSO
+- provide enterprise-grade approval controls such as SSO, policy delegation, or reviewer groups
 - provide merchant settlement, refunds, chargebacks, or compliance workflows
 - generate legal/tax-compliant PDF receipts
 
@@ -163,6 +163,7 @@ Key safeguards include:
 - **Payment policy:** STK Push requests require amount and phone number validation, block invalid amounts, and route above-limit payments into approval.
 - **Approval workflow:** risky STK Push requests create approval records and are not sent to Daraja until explicitly approved.
 - **Approval expiry:** pending approvals expire after `APPROVAL_EXPIRY_MINUTES` and cannot be approved or executed after expiry.
+- **Multi-reviewer approval:** high-risk approvals can require multiple distinct operator reviews before payment execution.
 - **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
 - **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
 - **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
@@ -205,6 +206,9 @@ OPERATOR_APPROVER_TOKEN=
 OPERATOR_ADMIN_TOKEN=
 
 APPROVAL_EXPIRY_MINUTES=30
+APPROVAL_REQUIRED_REVIEWERS=1
+HIGH_RISK_APPROVAL_REQUIRED_REVIEWERS=2
+HIGH_RISK_AMOUNT_THRESHOLD=50000
 ```
 
 Requests use:
@@ -556,7 +560,7 @@ Agent calls get_today_summary
    - payload integrity checks
 
 4. Approval workflow
-   - multi-reviewer rules
+   - dynamic risk scoring
    - SSO/OAuth-backed operator identity
    - configurable limits per environment or merchant
 

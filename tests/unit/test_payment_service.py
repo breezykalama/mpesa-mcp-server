@@ -126,6 +126,33 @@ def build_expiring_service_components(
     return service, repository, audit_logger, approval_service
 
 
+def build_high_risk_service_components(
+    *,
+    daraja_client: DarajaClientProtocol | None = None,
+) -> tuple[
+    PaymentService,
+    InMemoryTransactionRepository,
+    InMemoryAuditLogger,
+    ApprovalService,
+]:
+    repository = InMemoryTransactionRepository()
+    audit_logger = InMemoryAuditLogger()
+    approval_service = ApprovalService(
+        approval_repository=InMemoryApprovalRepository(),
+        high_risk_amount_threshold=50_000,
+        high_risk_required_reviewers=2,
+    )
+    service = PaymentService(
+        policy=PaymentPolicy(max_stk_amount=500),
+        payment_provider=DarajaPaymentProvider(daraja_client or MockDarajaClient()),
+        transaction_repository=repository,
+        audit_logger=audit_logger,
+        approval_service=approval_service,
+        metrics_recorder=InMemoryMetricsRecorder(),
+    )
+    return service, repository, audit_logger, approval_service
+
+
 def test_successful_mocked_stk_push() -> None:
     service, repository, _audit_logger = build_service()
 
@@ -615,3 +642,60 @@ def test_idempotency_prevents_duplicate_execution_for_approved_payload() -> None
     assert second_execution.payment.reason == "Existing transaction returned for idempotency key."
     assert daraja_client.stk_push_calls == 1
     assert len(repository.list_transactions()) == 1
+
+
+def test_high_risk_approval_executes_after_second_distinct_reviewer() -> None:
+    daraja_client = CountingDarajaClient()
+    service, repository, _audit_logger, _approval_service = build_high_risk_service_components(
+        daraja_client=daraja_client
+    )
+    approval_response = service.initiate_stk_push(
+        phone_number="254700000000",
+        amount=50_000,
+        account_reference="INV-HIGH-RISK",
+        description="High risk payment",
+        idempotency_key="high-risk-key",
+    )
+
+    assert approval_response.approval_id is not None
+    first_execution = service.execute_approved_payment(
+        approval_response.approval_id,
+        operator_id="operator-1",
+    )
+    second_execution = service.execute_approved_payment(
+        approval_response.approval_id,
+        operator_id="operator-2",
+    )
+
+    assert first_execution.status == "partially_approved"
+    assert first_execution.payment is None
+    assert second_execution.status == "approved"
+    assert second_execution.payment is not None
+    assert second_execution.payment.status == "pending"
+    assert daraja_client.stk_push_calls == 1
+    assert len(repository.list_transactions()) == 1
+
+
+def test_same_reviewer_does_not_execute_high_risk_payment_twice() -> None:
+    daraja_client = CountingDarajaClient()
+    service, repository, _audit_logger, _approval_service = build_high_risk_service_components(
+        daraja_client=daraja_client
+    )
+    approval_response = service.initiate_stk_push(
+        phone_number="254700000000",
+        amount=50_000,
+        account_reference="INV-HIGH-RISK-DUP",
+        description="High risk payment",
+    )
+
+    assert approval_response.approval_id is not None
+    service.execute_approved_payment(approval_response.approval_id, operator_id="operator-1")
+    duplicate_execution = service.execute_approved_payment(
+        approval_response.approval_id,
+        operator_id="operator-1",
+    )
+
+    assert duplicate_execution.status == "blocked"
+    assert duplicate_execution.payment is None
+    assert daraja_client.stk_push_calls == 0
+    assert repository.list_transactions() == []

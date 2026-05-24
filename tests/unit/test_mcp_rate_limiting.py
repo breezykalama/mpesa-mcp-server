@@ -38,7 +38,11 @@ class CountingPaymentService:
             transaction_id=f"txn-{self.calls}",
         )
 
-    def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+    def execute_approved_payment(
+        self,
+        approval_id: str,
+        operator_id: str = "system_operator",
+    ) -> ApprovalExecutionResponse:
         self.calls += 1
         return ApprovalExecutionResponse(
             status="approved",

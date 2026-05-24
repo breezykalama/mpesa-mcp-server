@@ -33,10 +33,16 @@ class ApprovalService:
         approval_repository: ApprovalRepositoryProtocol,
         audit_logger: AuditLoggerProtocol | None = None,
         expiry_minutes: int = 30,
+        required_reviewers: int = 1,
+        high_risk_required_reviewers: int = 2,
+        high_risk_amount_threshold: int = 50_000,
     ) -> None:
         self._approval_repository = approval_repository
         self._audit_logger = audit_logger
         self._expiry_minutes = expiry_minutes
+        self._required_reviewers = required_reviewers
+        self._high_risk_required_reviewers = high_risk_required_reviewers
+        self._high_risk_amount_threshold = high_risk_amount_threshold
 
     def create_approval_request(
         self,
@@ -48,11 +54,13 @@ class ApprovalService:
         """Create an approval request."""
 
         created_at = datetime.now(UTC)
+        required_reviewers = self._required_reviewers_for_payload(payload)
         approval = self._approval_repository.create(
             action=action,
             payload=payload,
             reason=reason,
             expires_at=created_at + timedelta(minutes=self._expiry_minutes),
+            required_reviewers=required_reviewers,
         )
         logger.info(
             "Approval request created.",
@@ -68,12 +76,17 @@ class ApprovalService:
                 "approval_id": approval.approval_id,
                 "action": approval.action,
                 "status": approval.status,
+                "required_reviewers": approval.required_reviewers,
                 "reason": approval.reason,
             },
         )
         return approval
 
-    def approve_request(self, approval_id: str) -> ApprovalServiceResponse:
+    def approve_request(
+        self,
+        approval_id: str,
+        operator_id: str = "system_operator",
+    ) -> ApprovalServiceResponse:
         """Approve an approval request."""
 
         current_approval = self._approval_repository.get(approval_id)
@@ -86,11 +99,7 @@ class ApprovalService:
                 approval=expired_approval,
             )
 
-        approval = self._approval_repository.update_status(
-            approval_id=approval_id,
-            status="approved",
-        )
-        if approval is None:
+        if current_approval is None:
             logger.info(
                 "Approval request not found.",
                 extra={
@@ -105,12 +114,85 @@ class ApprovalService:
                 reason="Approval request was not found.",
             )
 
+        if current_approval.status != "pending":
+            return ApprovalServiceResponse(
+                status="blocked",
+                allowed=False,
+                reason="Approval request is not pending.",
+                approval=current_approval,
+            )
+
+        if operator_id in current_approval.reviewer_ids:
+            logger.info(
+                "Duplicate approval review blocked.",
+                extra={
+                    "event_type": "approval_duplicate_review_blocked",
+                    "approval_id": approval_id,
+                    "operator_id": operator_id,
+                },
+            )
+            return ApprovalServiceResponse(
+                status="blocked",
+                allowed=False,
+                reason="Operator has already approved this request.",
+                approval=current_approval,
+            )
+
+        reviewer_ids = [*current_approval.reviewer_ids, operator_id]
+        review_count = len(reviewer_ids)
+        if review_count < current_approval.required_reviewers:
+            approval = self._approval_repository.save(
+                current_approval.model_copy(
+                    update={
+                        "reviewer_ids": reviewer_ids,
+                        "review_count": review_count,
+                        "reviewed_at": datetime.now(UTC),
+                    }
+                )
+            )
+            logger.info(
+                "Approval request partially approved.",
+                extra={
+                    "event_type": "approval_partially_approved",
+                    "approval_id": approval_id,
+                    "review_count": review_count,
+                    "required_reviewers": approval.required_reviewers,
+                },
+            )
+            self._log_audit_event(
+                "approval_partially_approved",
+                {
+                    "approval_id": approval_id,
+                    "action": approval.action,
+                    "review_count": review_count,
+                    "required_reviewers": approval.required_reviewers,
+                },
+            )
+            return ApprovalServiceResponse(
+                status="partially_approved",
+                allowed=True,
+                reason="Approval review recorded; additional reviewer required.",
+                approval=approval,
+            )
+
+        approval = self._approval_repository.save(
+            current_approval.model_copy(
+                update={
+                    "status": "approved",
+                    "reviewer_ids": reviewer_ids,
+                    "review_count": review_count,
+                    "reviewed_at": datetime.now(UTC),
+                }
+            )
+        )
         logger.info(
             "Approval request approved.",
             extra={
                 "event_type": "approval_approved",
                 "approval_id": approval_id,
                 "status": approval.status,
+                "review_count": approval.review_count,
+                "required_reviewers": approval.required_reviewers,
             },
         )
         self._log_audit_event(
@@ -119,6 +201,8 @@ class ApprovalService:
                 "approval_id": approval_id,
                 "action": approval.action,
                 "status": approval.status,
+                "review_count": approval.review_count,
+                "required_reviewers": approval.required_reviewers,
             },
         )
         return ApprovalServiceResponse(
@@ -249,3 +333,10 @@ class ApprovalService:
             payload,
             actor="operator",
         )
+
+    def _required_reviewers_for_payload(self, payload: dict[str, Any]) -> int:
+        amount = payload.get("amount")
+        if isinstance(amount, int) and amount >= self._high_risk_amount_threshold:
+            return self._high_risk_required_reviewers
+
+        return self._required_reviewers

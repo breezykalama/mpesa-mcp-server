@@ -172,7 +172,11 @@ class PaymentService:
             idempotency_key=resolved_idempotency_key,
         )
 
-    def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+    def execute_approved_payment(
+        self,
+        approval_id: str,
+        operator_id: str = "system_operator",
+    ) -> ApprovalExecutionResponse:
         """Approve and execute a pending STK push approval request."""
 
         approval = self._approval_service.get_approval_request(approval_id)
@@ -226,13 +230,32 @@ class PaymentService:
                 approval=approval,
             )
 
-        approval_response = self._approval_service.approve_request(approval_id)
+        approval_response = self._approval_service.approve_request(
+            approval_id,
+            operator_id=operator_id,
+        )
         approved_approval = approval_response.approval
         if approved_approval is None:
             return ApprovalExecutionResponse(
                 status="not_found",
                 allowed=False,
                 reason="Approval request was not found.",
+            )
+
+        if approval_response.status != "approved":
+            logger.info(
+                "Approval execution deferred.",
+                extra={
+                    "event_type": "approval_execution_deferred",
+                    "approval_id": approval_id,
+                    "status": approval_response.status,
+                },
+            )
+            return ApprovalExecutionResponse(
+                status=approval_response.status,
+                allowed=False,
+                reason=approval_response.reason,
+                approval=approved_approval,
             )
 
         payment_response = self._execute_approved_stk_push(approved_approval.payload)

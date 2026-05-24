@@ -677,6 +677,8 @@ Payments above `MAX_STK_AMOUNT` are converted into approval requests. They are n
 
 Pending approvals expire after `APPROVAL_EXPIRY_MINUTES`. Expired approvals move to `expired`, disappear from the pending approvals list, and cannot execute payments.
 
+High-risk approvals can require multiple distinct operator reviews. By default, requests at or above `HIGH_RISK_AMOUNT_THRESHOLD` require `HIGH_RISK_APPROVAL_REQUIRED_REVIEWERS`; the same operator cannot approve the same request twice.
+
 ### Idempotency
 
 Repeated STK Push requests with the same idempotency key return the existing transaction instead of creating duplicates.
