@@ -50,6 +50,24 @@ def list_pending_approvals(
     return {"approvals": approval_service.list_pending_requests()}
 
 
+@router.post("/expire-stale", response_model=None)
+def expire_stale_approvals(
+    approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
+    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
+) -> dict[str, int | str]:
+    """Expire stale pending approval requests."""
+
+    expired_count = approval_service.expire_stale_approvals()
+    logger.info(
+        "Stale approvals expired.",
+        extra={
+            "event_type": "approval_stale_expired",
+            "expired_count": expired_count,
+        },
+    )
+    return {"status": "ok", "expired_count": expired_count}
+
+
 @router.get("/{approval_id}", response_model=None)
 def get_approval(
     approval_id: str,

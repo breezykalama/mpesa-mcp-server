@@ -64,6 +64,32 @@ def test_approve_payment_request_tool_delegates() -> None:
     assert response.data["payment"]["transaction_id"] == "txn_123"
 
 
+def test_approve_payment_request_tool_handles_expired_approval() -> None:
+    class ExpiredApprovalService:
+        def execute_approved_payment(self, approval_id: str) -> ApprovalExecutionResponse:
+            return ApprovalExecutionResponse(
+                status="expired",
+                allowed=False,
+                reason="Approval request has expired.",
+                approval=ApprovalRequest(
+                    approval_id=approval_id,
+                    action="initiate_stk_push",
+                    payload={"amount": 20_000},
+                    reason="Amount exceeds limit.",
+                    status="expired",
+                ),
+            )
+
+    response = approve_payment_request_tool(
+        {"approval_id": "approval-expired"},
+        ExpiredApprovalService(),
+    )
+
+    assert response.status == "expired"
+    assert response.allowed is False
+    assert response.data["approval"]["status"] == "expired"
+
+
 def test_reject_payment_request_tool_delegates() -> None:
     service = RecordingApprovalService()
 

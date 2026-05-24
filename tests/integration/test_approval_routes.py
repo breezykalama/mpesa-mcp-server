@@ -104,6 +104,19 @@ def test_missing_approval_returns_404() -> None:
     assert reject_response.json()["status"] == "not_found"
 
 
+def test_expire_stale_endpoint_expires_pending_approvals() -> None:
+    container = build_approval_container(approval_expiry_minutes=0)
+    create_pending_approval(container)
+
+    expire_response = request_with_container(container, "POST", "/approvals/expire-stale")
+    pending_response = request_with_container(container, "GET", "/approvals/pending")
+
+    assert expire_response.status_code == 200
+    assert expire_response.json() == {"status": "ok", "expired_count": 1}
+    assert pending_response.status_code == 200
+    assert pending_response.json()["approvals"] == []
+
+
 def test_approval_routes_are_secret_free() -> None:
     container = build_approval_container(callback_shared_secret="local-callback-secret")
     approval_id = create_pending_approval(container)
@@ -134,12 +147,14 @@ def test_reject_writes_audit_event() -> None:
 def build_approval_container(
     *,
     callback_shared_secret: str | None = None,
+    approval_expiry_minutes: int = 30,
 ) -> AppContainer:
     return AppContainer.mock(
         settings=Settings(
             database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
             callback_shared_secret=callback_shared_secret,
             operator_auth_enabled=False,
+            approval_expiry_minutes=approval_expiry_minutes,
         )
     )
 

@@ -1,5 +1,6 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 import type { ApprovalRequest } from "../types/operator";
+import { formatDateTime, relativeTime } from "../utils/date";
 import { EmptyState } from "./EmptyState";
 import { SkeletonRows } from "./Skeleton";
 
@@ -35,7 +36,10 @@ export function ApprovalsPanel({
               <p className="text-sm font-semibold text-ink">{approval.action}</p>
               <p className="mt-1 text-sm text-muted">{approval.reason}</p>
               <p className="mt-2 text-xs text-muted">
-                {approval.approval_id} · {new Date(approval.created_at).toLocaleString()}
+                {approval.approval_id} · Created {relativeTime(approval.created_at)}
+              </p>
+              <p className="mt-1 text-xs text-ember" title={formatDateTime(approval.expires_at)}>
+                Expires {relativeTime(approval.expires_at)}
               </p>
             </div>
             <div className="flex gap-2">

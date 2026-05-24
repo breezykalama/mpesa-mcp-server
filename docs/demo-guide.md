@@ -562,6 +562,7 @@ GET  /approvals/pending                  approver+
 GET  /approvals/{approval_id}            approver+
 POST /approvals/{approval_id}/approve    approver+
 POST /approvals/{approval_id}/reject     approver+
+POST /approvals/expire-stale             approver+
 ```
 
 Example operator request:
@@ -673,6 +674,8 @@ Both dashboards are useful for demos and reviewer walkthroughs, but neither is a
 ### Approval Workflow
 
 Payments above `MAX_STK_AMOUNT` are converted into approval requests. They are not executed immediately.
+
+Pending approvals expire after `APPROVAL_EXPIRY_MINUTES`. Expired approvals move to `expired`, disappear from the pending approvals list, and cannot execute payments.
 
 ### Idempotency
 

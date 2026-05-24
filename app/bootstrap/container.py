@@ -92,6 +92,7 @@ class AppContainer:
         approval_service = ApprovalService(
             approval_repository=approval_repository,
             audit_logger=audit_logger,
+            expiry_minutes=resolved_settings.approval_expiry_minutes,
         )
 
         return cls(

@@ -18,6 +18,7 @@ class ApprovalRepositoryProtocol(Protocol):
         action: str,
         payload: dict[str, object],
         reason: str,
+        expires_at: datetime,
     ) -> ApprovalRequest:
         """Create an approval request."""
 
@@ -48,6 +49,7 @@ class InMemoryApprovalRepository:
         action: str,
         payload: dict[str, object],
         reason: str,
+        expires_at: datetime,
     ) -> ApprovalRequest:
         """Create an approval request."""
 
@@ -56,6 +58,7 @@ class InMemoryApprovalRepository:
             action=action,
             payload=payload,
             reason=reason,
+            expires_at=expires_at,
         )
         self._approvals[approval.approval_id] = approval
         return approval
@@ -86,8 +89,13 @@ class InMemoryApprovalRepository:
         if approval is None:
             return None
 
-        updated_approval = approval.model_copy(
-            update={"status": status, "reviewed_at": datetime.now(UTC)}
-        )
+        now = datetime.now(UTC)
+        update_payload: dict[str, object] = {"status": status}
+        if status == "expired":
+            update_payload["expired_at"] = now
+        else:
+            update_payload["reviewed_at"] = now
+
+        updated_approval = approval.model_copy(update=update_payload)
         self._approvals[approval_id] = updated_approval
         return updated_approval

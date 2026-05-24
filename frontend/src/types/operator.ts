@@ -34,7 +34,9 @@ export interface ApprovalRequest {
   reason: string;
   status: "pending" | "approved" | "rejected" | "expired";
   created_at: string;
+  expires_at: string;
   reviewed_at: string | null;
+  expired_at: string | null;
 }
 
 export interface ReconciliationFinding {

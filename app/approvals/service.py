@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel
@@ -31,9 +32,11 @@ class ApprovalService:
         *,
         approval_repository: ApprovalRepositoryProtocol,
         audit_logger: AuditLoggerProtocol | None = None,
+        expiry_minutes: int = 30,
     ) -> None:
         self._approval_repository = approval_repository
         self._audit_logger = audit_logger
+        self._expiry_minutes = expiry_minutes
 
     def create_approval_request(
         self,
@@ -44,10 +47,12 @@ class ApprovalService:
     ) -> ApprovalRequest:
         """Create an approval request."""
 
+        created_at = datetime.now(UTC)
         approval = self._approval_repository.create(
             action=action,
             payload=payload,
             reason=reason,
+            expires_at=created_at + timedelta(minutes=self._expiry_minutes),
         )
         logger.info(
             "Approval request created.",
@@ -70,6 +75,16 @@ class ApprovalService:
 
     def approve_request(self, approval_id: str) -> ApprovalServiceResponse:
         """Approve an approval request."""
+
+        current_approval = self._approval_repository.get(approval_id)
+        if current_approval is not None and self.is_expired(current_approval):
+            expired_approval = self._expire_approval(current_approval)
+            return ApprovalServiceResponse(
+                status="expired",
+                allowed=False,
+                reason="Approval request has expired.",
+                approval=expired_approval,
+            )
 
         approval = self._approval_repository.update_status(
             approval_id=approval_id,
@@ -115,6 +130,16 @@ class ApprovalService:
 
     def reject_request(self, approval_id: str) -> ApprovalServiceResponse:
         """Reject an approval request."""
+
+        current_approval = self._approval_repository.get(approval_id)
+        if current_approval is not None and self.is_expired(current_approval):
+            expired_approval = self._expire_approval(current_approval)
+            return ApprovalServiceResponse(
+                status="expired",
+                allowed=False,
+                reason="Approval request has expired.",
+                approval=expired_approval,
+            )
 
         approval = self._approval_repository.update_status(
             approval_id=approval_id,
@@ -166,7 +191,54 @@ class ApprovalService:
     def list_pending_requests(self) -> list[ApprovalRequest]:
         """Return pending approval requests."""
 
-        return self._approval_repository.list_pending()
+        self.expire_stale_approvals()
+        return [
+            approval
+            for approval in self._approval_repository.list_pending()
+            if not self.is_expired(approval)
+        ]
+
+    def expire_stale_approvals(self) -> int:
+        """Expire stale pending approval requests and return the count."""
+
+        expired_count = 0
+        for approval in self._approval_repository.list_pending():
+            if self.is_expired(approval):
+                self._expire_approval(approval)
+                expired_count += 1
+
+        return expired_count
+
+    def is_expired(self, approval: ApprovalRequest) -> bool:
+        """Return whether an approval request is expired."""
+
+        return approval.status == "pending" and datetime.now(UTC) >= approval.expires_at
+
+    def _expire_approval(self, approval: ApprovalRequest) -> ApprovalRequest:
+        expired_approval = self._approval_repository.update_status(
+            approval_id=approval.approval_id,
+            status="expired",
+        )
+        if expired_approval is None:
+            return approval
+
+        logger.info(
+            "Approval request expired.",
+            extra={
+                "event_type": "approval_expired",
+                "approval_id": approval.approval_id,
+                "status": expired_approval.status,
+            },
+        )
+        self._log_audit_event(
+            "approval_expired",
+            {
+                "approval_id": approval.approval_id,
+                "action": approval.action,
+                "status": expired_approval.status,
+            },
+        )
+        return expired_approval
 
     def _log_audit_event(self, event_type: str, payload: dict[str, Any]) -> None:
         if self._audit_logger is None:

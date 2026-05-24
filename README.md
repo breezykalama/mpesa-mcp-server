@@ -162,6 +162,7 @@ Key safeguards include:
 - **Tool governance:** operators can enable, block, or require approval for MCP tools with `ENABLED_MCP_TOOLS`, `BLOCKED_MCP_TOOLS`, and `APPROVAL_REQUIRED_MCP_TOOLS`.
 - **Payment policy:** STK Push requests require amount and phone number validation, block invalid amounts, and route above-limit payments into approval.
 - **Approval workflow:** risky STK Push requests create approval records and are not sent to Daraja until explicitly approved.
+- **Approval expiry:** pending approvals expire after `APPROVAL_EXPIRY_MINUTES` and cannot be approved or executed after expiry.
 - **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
 - **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
 - **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
@@ -193,6 +194,7 @@ Protected endpoints:
 - `GET /approvals/{approval_id}` requires `approver+`
 - `POST /approvals/{approval_id}/approve` requires `approver+`
 - `POST /approvals/{approval_id}/reject` requires `approver+`
+- `POST /approvals/expire-stale` requires `approver+`
 
 Configure local tokens with:
 
@@ -201,6 +203,8 @@ OPERATOR_AUTH_ENABLED=true
 OPERATOR_VIEWER_TOKEN=
 OPERATOR_APPROVER_TOKEN=
 OPERATOR_ADMIN_TOKEN=
+
+APPROVAL_EXPIRY_MINUTES=30
 ```
 
 Requests use:
@@ -552,7 +556,6 @@ Agent calls get_today_summary
    - payload integrity checks
 
 4. Approval workflow
-   - approval expiry
    - multi-reviewer rules
    - SSO/OAuth-backed operator identity
    - configurable limits per environment or merchant

@@ -100,6 +100,32 @@ def build_service_components(
     return service, repository, audit_logger, approval_service
 
 
+def build_expiring_service_components(
+    *,
+    daraja_client: DarajaClientProtocol | None = None,
+) -> tuple[
+    PaymentService,
+    InMemoryTransactionRepository,
+    InMemoryAuditLogger,
+    ApprovalService,
+]:
+    repository = InMemoryTransactionRepository()
+    audit_logger = InMemoryAuditLogger()
+    approval_service = ApprovalService(
+        approval_repository=InMemoryApprovalRepository(),
+        expiry_minutes=0,
+    )
+    service = PaymentService(
+        policy=PaymentPolicy(max_stk_amount=500),
+        payment_provider=DarajaPaymentProvider(daraja_client or MockDarajaClient()),
+        transaction_repository=repository,
+        audit_logger=audit_logger,
+        approval_service=approval_service,
+        metrics_recorder=InMemoryMetricsRecorder(),
+    )
+    return service, repository, audit_logger, approval_service
+
+
 def test_successful_mocked_stk_push() -> None:
     service, repository, _audit_logger = build_service()
 
@@ -498,6 +524,28 @@ def test_rejected_request_cannot_execute() -> None:
     assert execution_response.status == "blocked"
     assert execution_response.payment is None
     assert daraja_client.stk_push_calls == 0
+
+
+def test_expired_approval_cannot_execute_payment() -> None:
+    daraja_client = CountingDarajaClient()
+    service, repository, _audit_logger, _approval_service = build_expiring_service_components(
+        daraja_client=daraja_client
+    )
+    approval_response = service.initiate_stk_push(
+        phone_number="254700000000",
+        amount=501,
+        account_reference="INV-EXPIRED",
+        description="Invoice payment",
+    )
+
+    assert approval_response.approval_id is not None
+    execution_response = service.execute_approved_payment(approval_response.approval_id)
+
+    assert execution_response.status == "expired"
+    assert execution_response.allowed is False
+    assert execution_response.payment is None
+    assert daraja_client.stk_push_calls == 0
+    assert repository.list_transactions() == []
 
 
 def test_missing_approval_id_returns_not_found() -> None:

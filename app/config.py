@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     operator_viewer_token: str | None = None
     operator_approver_token: str | None = None
     operator_admin_token: str | None = None
+    approval_expiry_minutes: int = 30
 
     model_config = SettingsConfigDict(
         env_file=".env",

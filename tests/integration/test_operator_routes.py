@@ -25,6 +25,8 @@ def test_list_transactions() -> None:
     assert transactions[0]["status"] == "pending"
     assert transactions[0]["amount"] == 1_000
     assert transactions[0]["phone_number"] == "254700000000"
+    assert transactions[0]["provider_transaction_id"] == "ws_CO_OPERATOR"
+    assert transactions[0]["provider_reference"] == "mock_operator"
     assert "created_at" in transactions[0]
 
 
@@ -112,6 +114,57 @@ def test_reconciliation_endpoint() -> None:
     assert summary["checked_transactions"] == 1
     assert summary["finding_count"] >= 1
     assert summary["findings"][0]["transaction_id"]
+
+
+def test_system_status_endpoint() -> None:
+    container = build_operator_container()
+
+    response = request_with_container(container, "GET", "/operator/system/status")
+
+    assert response.status_code == 200
+    system = response.json()["system"]
+    assert system["status"] == "ready"
+    assert system["payment_provider"] == "daraja"
+    assert system["storage_mode"] == "memory"
+    assert system["rate_limit_mode"] == "memory"
+    assert system["auth_mode"] == "disabled"
+
+
+def test_receipt_lookup_by_provider_reference() -> None:
+    container = build_operator_container()
+    seed_transaction(container)
+    container.transaction_repository.update_transaction_status(
+        checkout_request_id="ws_CO_OPERATOR",
+        status="completed",
+        result_code=0,
+        result_description="Completed",
+        mpesa_receipt_number="RCPOPERATOR",
+    )
+
+    response = request_with_container(
+        container,
+        "GET",
+        "/operator/receipts/ws_CO_OPERATOR",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "generated"
+    assert body["receipt"]["checkout_request_id"] == "ws_CO_OPERATOR"
+    assert body["receipt"]["mpesa_receipt_number"] == "RCPOPERATOR"
+
+
+def test_missing_receipt_lookup_returns_not_found() -> None:
+    container = build_operator_container()
+
+    response = request_with_container(
+        container,
+        "GET",
+        "/operator/receipts/missing",
+    )
+
+    assert response.status_code == 404
+    assert response.json()["status"] == "not_found"
 
 
 def test_operator_routes_do_not_expose_secrets() -> None:

@@ -82,3 +82,34 @@ class ReceiptService:
             reason=generation_result.reason,
             receipt=receipt_payload,
         )
+
+    def generate_receipt_by_reference(self, reference: str) -> ReceiptServiceResponse:
+        """Generate a receipt from a checkout or provider transaction reference."""
+
+        if not reference:
+            return ReceiptServiceResponse(
+                status="blocked",
+                allowed=False,
+                reason="Transaction reference is required.",
+            )
+
+        transaction = self._transaction_repository.find_by_checkout_request_id(reference)
+        if transaction is None:
+            transaction = next(
+                (
+                    candidate
+                    for candidate in self._transaction_repository.list_transactions()
+                    if candidate.provider_transaction_id == reference
+                    or candidate.provider_reference == reference
+                ),
+                None,
+            )
+
+        if transaction is None:
+            return ReceiptServiceResponse(
+                status="not_found",
+                allowed=False,
+                reason="Transaction was not found.",
+            )
+
+        return self.generate_receipt(transaction.checkout_request_id)

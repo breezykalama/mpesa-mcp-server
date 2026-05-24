@@ -19,4 +19,6 @@ class ApprovalRequest(BaseModel):
     reason: str
     status: ApprovalStatus = "pending"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     reviewed_at: datetime | None = None
+    expired_at: datetime | None = None

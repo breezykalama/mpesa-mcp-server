@@ -191,6 +191,25 @@ class PaymentService:
                 reason="Approval request was not found.",
             )
 
+        if self._approval_service.is_expired(approval):
+            expired_count = self._approval_service.expire_stale_approvals()
+            logger.info(
+                "Approval execution blocked because request expired.",
+                extra={
+                    "event_type": "approval_execution_blocked",
+                    "approval_id": approval_id,
+                    "status": "expired",
+                    "expired_count": expired_count,
+                },
+            )
+            expired_approval = self._approval_service.get_approval_request(approval_id)
+            return ApprovalExecutionResponse(
+                status="expired",
+                allowed=False,
+                reason="Approval request has expired.",
+                approval=expired_approval or approval,
+            )
+
         if approval.status != "pending":
             logger.info(
                 "Approval execution blocked.",
