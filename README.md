@@ -407,6 +407,8 @@ The default Docker runtime starts the FastAPI app with PostgreSQL and Redis for 
 
 For a guided walkthrough of the demo, see [docs/demo-guide.md](docs/demo-guide.md).
 
+For the prioritized path from prototype to production, see [docs/production-readiness-checklist.md](docs/production-readiness-checklist.md).
+
 ```bash
 docker compose up --build
 ```
