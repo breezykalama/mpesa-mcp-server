@@ -540,51 +540,81 @@ Agent calls get_today_summary
 
 ## Roadmap
 
-1. Real Daraja sandbox adapter
-   - OAuth token management
-   - STK push request signing
-   - transaction status query submission
-   - HTTP error handling
-   - retries and production hardening
+### Completed
 
-2. PostgreSQL persistence
-   - SQLAlchemy models
-   - Alembic migrations
-   - repository implementation backed by PostgreSQL
-   - durable audit trail
+**Agent and MCP layer**
 
-3. Callback verification
-   - callback URL validation
-   - provider/source verification strategy
-   - replay protection
-   - payload integrity checks
+- MCP runtime and tool registration
+- legacy M-Pesa-specific tools
+- generic multi-rail payment tools
+- MCP wrappers for payment initiation, status checks, receipts, analytics, approvals, and reconciliation
 
-4. Approval workflow
-   - dynamic risk scoring
-   - SSO/OAuth-backed operator identity
-   - configurable limits per environment or merchant
+**Payment provider layer**
 
-5. Dashboard
-   - production hardening for the React operator dashboard
-   - transaction monitoring
-   - receipt lookup and JSON export
-   - audit and callback timelines
-   - filtering, search, and sorting for transactions
-   - daily revenue and failure summaries
+- real Daraja sandbox adapter
+- Daraja OAuth token handling
+- STK Push sandbox request submission
+- Daraja transaction status query submission
+- Airtel Money mock provider to prove the multi-rail architecture
+
+**Persistence and infrastructure**
+
+- PostgreSQL persistence
+- SQLAlchemy transaction and audit models
+- Alembic migrations
+- durable audit trail
+- Docker runtime with PostgreSQL and Redis
+- automatic Alembic migrations on Docker startup
+- GitHub Actions backend and frontend CI
+
+**Safety and governance**
+
+- payment safety policy
+- callback shared secret validation
+- callback replay protection
+- Redis-backed MCP tool rate limiting
+- idempotency for payment initiation
+- approval workflow
+- approval expiry
+- stale approval handling
+- multi-reviewer approvals
+- high-risk approval thresholds
+- operator RBAC
+
+**Operator experience**
+
+- React operator dashboard
+- transaction monitoring
+- receipt lookup and JSON export
+- audit and callback timelines
+- filtering, search, and sorting for transactions
+- daily revenue and failure summaries
+- approval review progress
+
+**Observability and operations**
+
+- health and readiness endpoints
+- in-memory metrics endpoint
+- structured application logs
+- correlation ID tracing
+- reconciliation engine
+- Docker Compose local runtime
+
+### Next Roadmap
+
+- dynamic risk scoring
+- configurable limits per environment or merchant
+- provider/source verification strategy
+- payload integrity checks
+- retry policy and production hardening for Daraja calls
+- SSO/OAuth-backed operator identity
+- receipt PDF export
+- more payment rails beyond Daraja and Airtel mock
 
 ## Development Status
 
-The MVP currently has tested vertical slices for:
+The project now has tested backend and frontend vertical slices for agent-facing MCP tools, payment workflows, callback handling, approval governance, operator APIs, and the React operator dashboard.
 
-- STK push initiation
-- transaction status checks
-- STK callback handling
-- receipt generation
-- daily analytics
-- reconciliation
-- operator approval API
-- operator dashboard API
-- lightweight operator auth/RBAC
-- MCP server tool registration
+Daraja sandbox and PostgreSQL adapters exist. Mock mode remains available for local development, demos, and tests, so contributors can work without live credentials or real payment calls.
 
-All implemented behavior is covered by unit or integration tests and remains mock-backed until real Daraja and database adapters are introduced.
+CI validates backend tests, linting, typing, and frontend tests/builds. Docker Compose can run the backend with PostgreSQL and Redis for local runtime validation.
