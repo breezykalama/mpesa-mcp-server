@@ -1,0 +1,16 @@
+title = "mpesa-mcp-server secret scanning"
+
+[allowlist]
+description = "Allow documented local placeholders and test-only fake values."
+regexes = [
+  '''(?i)placeholder''',
+  '''(?i)local-callback-secret''',
+  '''(?i)(viewer|approver|admin|operator)-token''',
+  '''(?i)(consumer|sandbox|production)-secret''',
+  '''(?i)encrypted-(credential|production-credential)''',
+  '''(?i)sandbox-token''',
+  '''(?i)production-token''',
+  '''(?i)passkey''',
+  '''postgresql\+?(asyncpg|psycopg)?://(mpesa|user):(?:mpesa|pass)@localhost''',
+]
+

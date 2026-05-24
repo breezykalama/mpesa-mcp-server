@@ -125,6 +125,12 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Keep `.env.example` placeholder-based.
 - [x] **Done:** Avoid real credentials in README and demo docs.
 - [x] **Done:** Avoid logging known secret fields.
+- [x] **Done:** Add startup validation for Daraja production credentials.
+- [x] **Done:** Add startup validation for operator auth configuration.
+- [x] **Done:** Add startup validation for callback shared secret outside development.
+- [x] **Done:** Add startup validation for Redis and Postgres mode configuration.
+- [x] **Done:** Add CI secret scanning with gitleaks.
+- [x] **Done:** Add security model documentation for secret handling expectations.
 - [ ] **Todo:** Use a real secret manager for production credentials.
 - [ ] **Todo:** Store Daraja credentials outside flat files.
 - [ ] **Todo:** Store callback secret outside flat files.

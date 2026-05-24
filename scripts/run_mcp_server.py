@@ -13,8 +13,11 @@ if str(PROJECT_ROOT) not in sys.path:
 def main() -> None:
     """Run the MCP server from the project checkout."""
 
+    from app.config import get_settings
+    from app.config_validation import validate_startup_settings
     from app.mcp.server import run
 
+    validate_startup_settings(get_settings())
     run()
 
 
