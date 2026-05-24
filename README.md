@@ -1,4 +1,4 @@
-# M-Pesa MCP Server MVP
+# M-Pesa MCP Server
 
 [![CI](https://github.com/breezykalama/mpesa-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/breezykalama/mpesa-mcp-server/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
@@ -7,9 +7,9 @@
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ed)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
-An experimental Model Context Protocol (MCP) server that lets an AI agent interact with a guarded M-Pesa workflow through typed tools.
+An experimental Model Context Protocol (MCP) server that lets an AI agent interact with guarded payment workflows through typed tools.
 
-The MVP demonstrates how an agent can request payment actions, check transaction state, handle STK callbacks, generate receipts, and ask simple revenue questions while the actual payment logic remains isolated behind service interfaces.
+The project is a production-shaped prototype for safe agent-assisted payments. It demonstrates how an agent can request payment actions, check transaction state, handle STK callbacks, generate receipts, ask revenue questions, and support operator approvals while payment execution remains isolated behind service interfaces and provider adapters.
 
 ## Current Status
 
@@ -38,7 +38,7 @@ The smoke script runs fully in memory and now demonstrates the legacy M-Pesa flo
 
 ## Project Purpose
 
-This project is a backend architecture MVP for agent-assisted M-Pesa operations. It is designed to answer questions like:
+This project is a backend architecture prototype for agent-assisted payment operations, starting with M-Pesa. It is designed to answer questions like:
 
 - "Initiate an STK push for this invoice."
 - "Check the status of this checkout request."
@@ -62,7 +62,7 @@ It does not currently:
 - provide merchant settlement, refunds, chargebacks, or compliance workflows
 - generate legal/tax-compliant PDF receipts
 
-Instead, it is a controlled MCP-first backend skeleton that shows how those concerns can be introduced behind explicit interfaces.
+Instead, it is a controlled MCP-first backend and operator console that shows how those concerns can be introduced behind explicit interfaces.
 
 ## Architecture
 
@@ -125,12 +125,12 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 | Tool | Purpose | Current behavior |
 | --- | --- | --- |
 | `initiate_payment` | Start a provider-agnostic payment request | Uses the configured `PaymentProviderProtocol` implementation |
-| `initiate_stk_push` | Start an STK push request | Uses `MockDarajaClient`, saves a pending transaction in memory |
+| `initiate_stk_push` | Start a legacy M-Pesa STK Push request | Preserved for M-Pesa compatibility and routed through the same payment service |
 | `check_payment_status` | Check provider transaction status | Uses the configured payment provider |
-| `check_transaction_status` | Check a transaction reference status | Uses mock mode by default; sandbox mode can submit a Daraja Transaction Status query |
-| `generate_receipt` | Generate a receipt for a completed transaction | Generates an in-memory structured receipt only for completed transactions |
-| `get_today_summary` | Show today's M-Pesa revenue summary | Counts in-memory transactions created today |
-| `get_failed_transactions` | Show failed transactions | Returns in-memory transactions with `failed` status |
+| `check_transaction_status` | Check a legacy M-Pesa transaction reference | Uses mock mode by default; sandbox mode can submit a Daraja Transaction Status query |
+| `generate_receipt` | Generate a receipt for a completed transaction | Generates structured receipt data only for completed transactions |
+| `get_today_summary` | Show today's revenue summary | Counts transactions from the configured repository and only includes completed transactions in revenue |
+| `get_failed_transactions` | Show failed transactions | Returns transactions with `failed` status from the configured repository |
 | `approve_payment_request` | Approve a pending risky payment request | Marks approval as approved and executes the original STK push once |
 | `reject_payment_request` | Reject a pending risky payment request | Marks approval as rejected without initiating Daraja |
 | `run_reconciliation` | Detect local/provider transaction mismatches | Read-only reconciliation summary with detailed findings |
@@ -155,7 +155,7 @@ The default maximum STK amount is `10000`.
 
 ## Safety & Governance
 
-This MVP treats payment-capable AI tools as controlled operations, not open-ended API access.
+This project treats payment-capable AI tools as controlled operations, not open-ended API access.
 
 Key safeguards include:
 
@@ -171,7 +171,7 @@ Key safeguards include:
 - **Correlation IDs:** FastAPI requests and MCP tool execution carry correlation IDs through logs and audit events for traceability.
 - **Structured logs:** operational logs are JSON by default and avoid known secret fields.
 
-These controls are intentionally modular so memory-backed demo components can be replaced with Redis, PostgreSQL, and real Daraja adapters without rewriting the service layer.
+These controls are intentionally modular. Local development can run fully in memory, while Docker Compose can run the backend with PostgreSQL and Redis. Daraja sandbox support is available behind the same provider abstraction.
 
 ## Operator Security
 
@@ -263,7 +263,7 @@ The FastAPI app still serves the original minimal HTML fallback at:
 GET /operator/ui
 ```
 
-Both UIs are demo consoles for reviewing the backend workflow. They are not production frontends.
+Both UIs are demo consoles for reviewing the backend workflow. The React dashboard is production-minded, but it is still a project dashboard rather than a fully managed enterprise frontend.
 
 ## Callback Security
 
@@ -276,11 +276,11 @@ The callback route supports an optional shared-secret guard for development and 
 - Duplicate callback payloads are rejected with `409` as `duplicate_callback`.
 - If `CALLBACK_SHARED_SECRET` is empty, callbacks are accepted for local mock development.
 
-This is a pragmatic MVP control, not a complete production verification strategy. A production adapter should add source validation, stronger payload integrity checks, and provider-specific verification when available.
+This is a pragmatic prototype control, not a complete production verification strategy. A production adapter should add source validation, stronger payload integrity checks, and provider-specific verification when available.
 
-## Current Mock Mode
+## Local Mock Mode
 
-The MVP is intentionally mock-backed:
+Mock mode remains available for fast local development, CI, and safe demos:
 
 - Daraja calls are handled by `MockDarajaClient`
 - transactions are stored in `InMemoryTransactionRepository`
@@ -288,7 +288,7 @@ The MVP is intentionally mock-backed:
 - callback payloads can update in-memory transactions
 - receipt generation returns structured data, not PDFs
 
-This makes the system deterministic, fast to test, and safe to demo without live payment credentials.
+This makes the system deterministic, fast to test, and safe to demo without live payment credentials. Outside mock mode, the project also includes Daraja sandbox, PostgreSQL, Redis, and provider-aware transaction storage adapters.
 
 ## Daraja Sandbox Support
 
@@ -306,7 +306,7 @@ The project also includes `AirtelMoneyMockProvider`, selected with:
 PAYMENT_PROVIDER=airtel_mock
 ```
 
-This mock provider does not call Airtel or require credentials. It exists to prove that transactions can be stored with provider-aware metadata such as `provider="airtel"` and `rail="airtel_money"` while preserving the current MCP tool contract. A future generic payment tool can be added without rewriting the payment service.
+This mock provider does not call Airtel or require credentials. It exists to prove that transactions can be stored with provider-aware metadata such as `provider="airtel"` and `rail="airtel_money"` while preserving the current MCP tool contract.
 
 The MCP server now exposes both legacy M-Pesa-specific tools and provider-agnostic tools:
 
@@ -533,7 +533,7 @@ Agent calls generate_receipt
 
 ```text
 Agent calls get_today_summary
-  -> AnalyticsService reads today's in-memory transactions
+  -> AnalyticsService reads today's transactions from the configured repository
   -> completed, failed, and pending counts are calculated
   -> total_revenue counts completed transactions only
 ```
