@@ -54,6 +54,9 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Block unknown payment actions.
 - [x] **Done:** Add idempotency for payment initiation.
 - [x] **Done:** Prevent duplicate provider calls for repeated idempotency keys.
+- [x] **Done:** Add transaction state machine for local status changes.
+- [x] **Done:** Protect terminal transaction states from illegal transitions.
+- [x] **Done:** Prevent duplicate or late callbacks from overwriting completed or failed transactions.
 - [x] **Done:** Add high-risk approval thresholds.
 - [x] **Done:** Add multi-reviewer approval support.
 - [ ] **Todo:** Add stricter phone number format validation.

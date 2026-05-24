@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from app.storage.models import Base
 from app.storage.repositories import PostgresTransactionRepository
+from app.transactions.state_machine import TransactionStateTransitionError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -96,6 +97,45 @@ def test_postgres_repository_updates_transaction_status() -> None:
     assert updated.status == "completed"
     assert updated.result_code == 0
     assert updated.mpesa_receipt_number == "RCP123"
+
+
+def test_postgres_repository_does_not_mutate_on_invalid_transition() -> None:
+    repository = build_repository()
+    repository.save_pending_transaction(
+        phone_number="254700000000",
+        amount=1_000,
+        account_reference="INV-001",
+        description="Invoice payment",
+        checkout_request_id="ws_CO_INVALID",
+        merchant_request_id="mock_invalid",
+    )
+    repository.update_transaction_status(
+        checkout_request_id="ws_CO_INVALID",
+        status="completed",
+        result_code=0,
+        result_description="Success",
+        mpesa_receipt_number="RCP123",
+    )
+
+    try:
+        repository.update_transaction_status(
+            checkout_request_id="ws_CO_INVALID",
+            status="failed",
+            result_code=1032,
+            result_description="Late failure",
+            mpesa_receipt_number=None,
+        )
+    except TransactionStateTransitionError:
+        pass
+    else:
+        raise AssertionError("Expected invalid transition to raise.")
+
+    transaction = repository.find_by_checkout_request_id("ws_CO_INVALID")
+
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert transaction.result_description == "Success"
+    assert transaction.mpesa_receipt_number == "RCP123"
 
 
 def test_postgres_repository_lists_by_status_and_date() -> None:

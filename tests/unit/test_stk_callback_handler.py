@@ -40,7 +40,8 @@ def stk_callback_payload(
                 "ResultDesc": result_description,
                 "CallbackMetadata": {
                     "Item": metadata_items
-                    or [
+                    if metadata_items is not None
+                    else [
                         {"Name": "Amount", "Value": 1_000},
                         {"Name": "MpesaReceiptNumber", "Value": "RCP123"},
                         {"Name": "PhoneNumber", "Value": 254700000000},
@@ -133,3 +134,80 @@ def test_audit_event_written() -> None:
     assert event.event_type == "stk_callback_processed"
     assert event.payload["checkout_request_id"] == "ws_CO_123"
     assert event.payload["status"] == "completed"
+
+
+def test_duplicate_completed_callback_does_not_overwrite_completed_transaction() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+    first_result = handler.process(stk_callback_payload())
+
+    duplicate_result = handler.process(
+        stk_callback_payload(
+            result_description="Duplicate completion should not overwrite.",
+            metadata_items=[
+                {"Name": "Amount", "Value": 2_000},
+                {"Name": "MpesaReceiptNumber", "Value": "DUPLICATE"},
+                {"Name": "PhoneNumber", "Value": 254711111111},
+            ],
+        )
+    )
+    transaction = repository.find_by_checkout_request_id("ws_CO_123")
+
+    assert first_result.status == "completed"
+    assert duplicate_result.status == "invalid_transition"
+    assert duplicate_result.success is False
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert transaction.result_description == "The service request is processed successfully."
+    assert transaction.mpesa_receipt_number == "RCP123"
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_transition"
+
+
+def test_duplicate_failed_callback_does_not_overwrite_failed_transaction() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+    first_result = handler.process(
+        stk_callback_payload(
+            result_code=1032,
+            result_description="Request cancelled by user.",
+            metadata_items=[],
+        )
+    )
+
+    duplicate_result = handler.process(
+        stk_callback_payload(
+            result_code=1032,
+            result_description="Duplicate failure should not overwrite.",
+            metadata_items=[],
+        )
+    )
+    transaction = repository.find_by_checkout_request_id("ws_CO_123")
+
+    assert first_result.status == "failed"
+    assert duplicate_result.status == "invalid_transition"
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert transaction.result_description == "Request cancelled by user."
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_transition"
+
+
+def test_failed_transaction_cannot_be_completed_by_later_callback() -> None:
+    handler, repository, audit_logger = build_handler()
+    seed_transaction(repository)
+    handler.process(
+        stk_callback_payload(
+            result_code=1032,
+            result_description="Request cancelled by user.",
+            metadata_items=[],
+        )
+    )
+
+    result = handler.process(stk_callback_payload())
+    transaction = repository.find_by_checkout_request_id("ws_CO_123")
+
+    assert result.status == "invalid_transition"
+    assert result.success is False
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert transaction.mpesa_receipt_number is None
+    assert audit_logger.events[-1].event_type == "stk_callback_invalid_transition"

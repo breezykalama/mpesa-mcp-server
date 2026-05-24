@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from app.storage.database import SessionFactory
 from app.storage.models import TransactionModel
+from app.transactions.state_machine import validate_transition
 
 
 class PendingTransaction(BaseModel):
@@ -172,6 +173,7 @@ class InMemoryTransactionRepository:
         transaction = self.find_by_checkout_request_id(checkout_request_id)
         if transaction is None:
             return None
+        validate_transition(transaction.status, status)
 
         updated_transaction = transaction.model_copy(
             update={
@@ -312,6 +314,7 @@ class PostgresTransactionRepository:
             )
             if model is None:
                 return None
+            validate_transition(model.status, status)
 
             model.status = status
             model.result_code = result_code

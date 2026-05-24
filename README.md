@@ -165,6 +165,7 @@ Key safeguards include:
 - **Approval expiry:** pending approvals expire after `APPROVAL_EXPIRY_MINUTES` and cannot be approved or executed after expiry.
 - **Multi-reviewer approval:** high-risk approvals can require multiple distinct operator reviews before payment execution.
 - **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
+- **Transaction state machine:** pending transactions can move only into terminal states, and terminal states cannot be overwritten by duplicate or late callbacks.
 - **Rate limiting:** sensitive MCP tools can be limited in memory or Redis.
 - **Callback security:** callbacks can require `X-Callback-Secret`, and duplicate callback payloads are rejected with replay protection.
 - **Audit trail:** payment initiation, callbacks, approvals, receipt generation, and rejected security events are captured as structured audit events.

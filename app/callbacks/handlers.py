@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.audit.logger import AuditLoggerProtocol
 from app.observability.metrics import MetricsRecorder
 from app.storage.repositories import PendingTransaction, TransactionRepositoryProtocol
+from app.transactions.state_machine import TransactionStateTransitionError
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +71,38 @@ class StkCallbackHandler:
         metadata = self._extract_metadata(callback)
         status = "completed" if result_code == 0 else "failed"
 
-        updated_transaction = self._transaction_repository.update_transaction_status(
-            checkout_request_id=checkout_request_id,
-            status=status,
-            result_code=result_code,
-            result_description=result_description,
-            mpesa_receipt_number=self._get_string(metadata, "MpesaReceiptNumber"),
-        )
+        try:
+            updated_transaction = self._transaction_repository.update_transaction_status(
+                checkout_request_id=checkout_request_id,
+                status=status,
+                result_code=result_code,
+                result_description=result_description,
+                mpesa_receipt_number=self._get_string(metadata, "MpesaReceiptNumber"),
+            )
+        except TransactionStateTransitionError as exc:
+            result = CallbackProcessingResult(
+                status="invalid_transition",
+                success=False,
+                reason=str(exc),
+                checkout_request_id=checkout_request_id,
+                result_code=result_code,
+                result_description=result_description,
+                mpesa_receipt_number=self._get_string(metadata, "MpesaReceiptNumber"),
+                phone_number=self._get_string(metadata, "PhoneNumber"),
+                amount=self._get_int(metadata, "Amount"),
+            )
+            self._audit_logger.log_event(
+                "stk_callback_invalid_transition",
+                result.model_dump(exclude_none=True),
+            )
+            logger.warning(
+                "STK callback attempted invalid transaction transition.",
+                extra={
+                    "event_type": "callback_invalid_transition",
+                    "checkout_request_id": checkout_request_id,
+                },
+            )
+            return result
 
         result = CallbackProcessingResult(
             status=status,
