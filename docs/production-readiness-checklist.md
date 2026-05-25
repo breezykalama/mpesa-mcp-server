@@ -26,6 +26,8 @@ These items should be complete before sending even a small real payment through 
 - [ ] **Todo:** Define the first real-money maximum transaction amount.
 - [ ] **Todo:** Define allowed production MCP tools.
 - [ ] **Todo:** Confirm whether MCP access is internal-only for the first test.
+- [x] **Done:** Add controlled first real-money production validation runbook.
+- [ ] **Todo:** Execute controlled first real-money production validation.
 
 ### Daraja Real-Money Readiness
 
@@ -371,6 +373,7 @@ These items improve long-term maintainability, operations, and product depth aft
 - [x] **Done:** Add README.
 - [x] **Done:** Add demo guide.
 - [x] **Done:** Add production readiness checklist.
+- [x] **Done:** Add controlled production validation runbook.
 - [ ] **Todo:** Add production setup guide.
 - [ ] **Todo:** Add Daraja production setup guide.
 - [ ] **Todo:** Add environment variable reference.
@@ -397,3 +400,4 @@ Before any controlled real-money launch, verify:
 - [ ] **Todo:** Backup and restore process is tested.
 - [ ] **Todo:** Rollback process is documented.
 - [ ] **Todo:** First low-value production transaction test plan is approved.
+- [ ] **Todo:** Controlled production validation runbook is executed and reviewed.
