@@ -24,6 +24,7 @@ def validate_startup_settings(settings: Settings) -> None:
 
     issues: list[ConfigValidationIssue] = []
     issues.extend(_validate_daraja_production_settings(settings))
+    issues.extend(_validate_identity_settings(settings))
     issues.extend(_validate_operator_auth_settings(settings))
     issues.extend(_validate_callback_secret_settings(settings))
     issues.extend(_validate_callback_source_verification_settings(settings))
@@ -56,7 +57,7 @@ def _validate_daraja_production_settings(
 
 
 def _validate_operator_auth_settings(settings: Settings) -> list[ConfigValidationIssue]:
-    if not settings.operator_auth_enabled:
+    if not settings.operator_auth_enabled or settings.auth_mode != "token":
         return []
 
     if any(
@@ -74,6 +75,29 @@ def _validate_operator_auth_settings(settings: Settings) -> list[ConfigValidatio
             "OPERATOR_AUTH_ENABLED",
             "at least one operator token is required when enabled",
         )
+    ]
+
+
+def _validate_identity_settings(settings: Settings) -> list[ConfigValidationIssue]:
+    if settings.auth_mode not in {"token", "oidc"}:
+        return [
+            ConfigValidationIssue(
+                "AUTH_MODE",
+                "must be one of token or oidc",
+            )
+        ]
+
+    if settings.auth_mode != "oidc":
+        return []
+
+    required_settings = {
+        "OIDC_ISSUER": settings.oidc_issuer,
+        "OIDC_AUDIENCE": settings.oidc_audience,
+    }
+    return [
+        ConfigValidationIssue(name, "required when AUTH_MODE=oidc")
+        for name, value in required_settings.items()
+        if not _has_value(value)
     ]
 
 

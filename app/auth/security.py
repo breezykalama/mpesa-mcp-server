@@ -4,29 +4,23 @@ from __future__ import annotations
 
 import logging
 from secrets import compare_digest
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
-from pydantic import BaseModel
 
+from app.auth.oidc import (
+    ROLE_LEVELS,
+    DevelopmentOIDCIdentityProvider,
+    OperatorIdentity,
+    OperatorIdentityProviderProtocol,
+    OperatorRole,
+)
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 
-OperatorRole = Literal["viewer", "approver", "admin"]
-ROLE_LEVELS: dict[OperatorRole, int] = {
-    "viewer": 1,
-    "approver": 2,
-    "admin": 3,
-}
-
 logger = logging.getLogger(__name__)
 
-
-class OperatorPrincipal(BaseModel):
-    """Authenticated operator principal."""
-
-    operator_id: str
-    role: OperatorRole
+OperatorPrincipal = OperatorIdentity
 
 
 def get_operator_principal(
@@ -36,7 +30,11 @@ def get_operator_principal(
     """Authenticate an operator from a bearer token."""
 
     if not container.settings.operator_auth_enabled:
-        principal = OperatorPrincipal(operator_id="local-admin", role="admin")
+        principal = OperatorIdentity(
+            subject="local-admin",
+            display_name="Local Administrator",
+            roles=["admin"],
+        )
         logger.info(
             "Operator auth disabled; local principal granted.",
             extra={
@@ -55,8 +53,8 @@ def get_operator_principal(
         )
         raise _unauthorized()
 
-    token_principal = _principal_for_token(container, token)
-    if token_principal is None:
+    identity = _identity_provider(container).authenticate(token)
+    if identity is None:
         logger.warning(
             "Operator authentication failed.",
             extra={"event_type": "operator_auth_failed", "reason": "invalid_token"},
@@ -67,11 +65,12 @@ def get_operator_principal(
         "Operator authenticated.",
         extra={
             "event_type": "operator_auth_success",
-            "operator_id": token_principal.operator_id,
-            "role": token_principal.role,
+            "operator_id": identity.operator_id,
+            "role": identity.role,
+            "auth_mode": container.settings.auth_mode,
         },
     )
-    return token_principal
+    return identity
 
 
 def require_viewer(
@@ -109,29 +108,57 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     return token
 
 
-def _principal_for_token(
-    container: AppContainer,
-    token: str,
-) -> OperatorPrincipal | None:
-    token_map: tuple[tuple[str | None, OperatorPrincipal], ...] = (
-        (
-            container.settings.operator_viewer_token,
-            OperatorPrincipal(operator_id="operator-viewer", role="viewer"),
-        ),
-        (
-            container.settings.operator_approver_token,
-            OperatorPrincipal(operator_id="operator-approver", role="approver"),
-        ),
-        (
-            container.settings.operator_admin_token,
-            OperatorPrincipal(operator_id="operator-admin", role="admin"),
-        ),
-    )
-    for configured_token, principal in token_map:
-        if configured_token and compare_digest(token, configured_token):
-            return principal
+class TokenIdentityProvider:
+    """Resolve configured static operator tokens into normalized identities."""
 
-    return None
+    def __init__(self, container: AppContainer) -> None:
+        self._container = container
+
+    def authenticate(self, credential: str | None) -> OperatorIdentity | None:
+        """Authenticate using the existing static bearer token mapping."""
+
+        if credential is None:
+            return None
+
+        token_map: tuple[tuple[str | None, OperatorIdentity], ...] = (
+            (
+                self._container.settings.operator_viewer_token,
+                OperatorIdentity(
+                    subject="operator-viewer",
+                    display_name="Operator Viewer",
+                    roles=["viewer"],
+                ),
+            ),
+            (
+                self._container.settings.operator_approver_token,
+                OperatorIdentity(
+                    subject="operator-approver",
+                    display_name="Operator Approver",
+                    roles=["approver"],
+                ),
+            ),
+            (
+                self._container.settings.operator_admin_token,
+                OperatorIdentity(
+                    subject="operator-admin",
+                    display_name="Operator Administrator",
+                    roles=["admin"],
+                ),
+            ),
+        )
+        for configured_token, identity in token_map:
+            if configured_token and compare_digest(credential, configured_token):
+                return identity
+
+        return None
+
+
+def _identity_provider(container: AppContainer) -> OperatorIdentityProviderProtocol:
+    if container.settings.auth_mode == "token":
+        return TokenIdentityProvider(container)
+    if container.settings.auth_mode == "oidc":
+        return DevelopmentOIDCIdentityProvider(container.settings)
+    raise ValueError("AUTH_MODE must be one of: token, oidc.")
 
 
 def _require_role(

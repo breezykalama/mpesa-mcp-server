@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.audit.repository import AuditEvent, AuditRepositoryProtocol, InMemoryAuditRepository
+from app.auth.oidc import OperatorIdentity
 from app.observability.tracing import get_correlation_id
 
 
@@ -18,6 +19,7 @@ class AuditLoggerProtocol(Protocol):
         *,
         actor: str | None = None,
         correlation_id: str | None = None,
+        identity: OperatorIdentity | None = None,
     ) -> None:
         """Log an audit event."""
 
@@ -41,6 +43,7 @@ class InMemoryAuditLogger:
         *,
         actor: str | None = None,
         correlation_id: str | None = None,
+        identity: OperatorIdentity | None = None,
     ) -> None:
         """Log an audit event."""
 
@@ -49,4 +52,7 @@ class InMemoryAuditLogger:
             payload=payload,
             actor=actor,
             correlation_id=correlation_id or get_correlation_id(),
+            operator_subject=identity.subject if identity else None,
+            operator_email=identity.email if identity else None,
+            operator_display_name=identity.display_name if identity else None,
         )

@@ -455,6 +455,8 @@ For the controlled first real-money validation process, see [docs/production-val
 
 For secret handling, startup validation, and CI secret scanning expectations, see [docs/security-model.md](docs/security-model.md).
 
+For token and future OIDC operator identity architecture, see [docs/operator-identity.md](docs/operator-identity.md).
+
 ```bash
 docker compose up --build
 ```

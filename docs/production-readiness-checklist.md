@@ -167,13 +167,17 @@ These items should be complete before internal users or operators depend on the 
 ### Authentication And Authorization
 
 - [x] **Done:** Add lightweight operator bearer-token authentication.
+- [x] **Done:** Add normalized operator identity and OIDC provider abstractions.
+- [x] **Done:** Add no-network development OIDC identity provider for tests and architecture validation.
+- [x] **Done:** Add optional operator identity fields to audit events.
+- [x] **Done:** Add startup validation for required OIDC issuer and audience configuration.
 - [x] **Done:** Add viewer, approver, and admin roles.
 - [x] **Done:** Protect operator endpoints.
 - [x] **Done:** Protect approval endpoints.
 - [x] **Done:** Prevent viewers from approving payments.
 - [x] **Done:** Restrict reconciliation run endpoint to admins.
 - [x] **Done:** Avoid logging raw tokens.
-- [ ] **Todo:** Replace static operator tokens with SSO/OAuth.
+- [ ] **Todo:** Replace static operator tokens with a production SSO/OIDC provider adapter.
 - [ ] **Todo:** Add real operator identity provider.
 - [ ] **Todo:** Add token/session expiry.
 - [ ] **Todo:** Add token rotation process.

@@ -22,6 +22,9 @@ class AuditEvent(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actor: str | None = None
     correlation_id: str | None = None
+    operator_subject: str | None = None
+    operator_email: str | None = None
+    operator_display_name: str | None = None
 
 
 class AuditRepositoryProtocol(Protocol):
@@ -34,6 +37,9 @@ class AuditRepositoryProtocol(Protocol):
         payload: dict[str, Any],
         actor: str | None = None,
         correlation_id: str | None = None,
+        operator_subject: str | None = None,
+        operator_email: str | None = None,
+        operator_display_name: str | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -57,6 +63,9 @@ class InMemoryAuditRepository:
         payload: dict[str, Any],
         actor: str | None = None,
         correlation_id: str | None = None,
+        operator_subject: str | None = None,
+        operator_email: str | None = None,
+        operator_display_name: str | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -66,6 +75,9 @@ class InMemoryAuditRepository:
             payload=payload,
             actor=actor,
             correlation_id=correlation_id,
+            operator_subject=operator_subject,
+            operator_email=operator_email,
+            operator_display_name=operator_display_name,
         )
         self._events.append(event)
         return event
@@ -98,6 +110,9 @@ class PostgresAuditRepository:
         payload: dict[str, Any],
         actor: str | None = None,
         correlation_id: str | None = None,
+        operator_subject: str | None = None,
+        operator_email: str | None = None,
+        operator_display_name: str | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -107,6 +122,9 @@ class PostgresAuditRepository:
             payload=payload,
             actor=actor,
             correlation_id=correlation_id,
+            operator_subject=operator_subject,
+            operator_email=operator_email,
+            operator_display_name=operator_display_name,
             created_at=datetime.now(UTC),
         )
         with self._session_factory() as session:
@@ -140,5 +158,8 @@ class PostgresAuditRepository:
             payload=model.payload,
             actor=model.actor,
             correlation_id=model.correlation_id,
+            operator_subject=model.operator_subject,
+            operator_email=model.operator_email,
+            operator_display_name=model.operator_display_name,
             created_at=model.created_at,
         )

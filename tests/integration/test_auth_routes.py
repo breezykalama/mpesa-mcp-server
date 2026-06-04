@@ -184,6 +184,30 @@ def test_auth_disabled_allows_local_access() -> None:
     assert response.json()["transactions"] == []
 
 
+def test_oidc_mode_uses_normalized_operator_identity() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            database_url="postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp",
+            auth_mode="oidc",
+            operator_auth_enabled=True,
+            oidc_issuer="https://identity.example.test",
+            oidc_audience="mpesa-operator-api",
+            oidc_development_subject="oidc-admin-subject",
+            oidc_development_roles="admin",
+        )
+    )
+
+    response = request_with_container(
+        container,
+        "POST",
+        "/operator/reconciliation/run",
+        token="development-oidc-credential",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["status"] == "ok"
+
+
 def test_auth_does_not_expose_tokens(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

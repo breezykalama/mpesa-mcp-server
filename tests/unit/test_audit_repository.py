@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.audit.logger import InMemoryAuditLogger
 from app.audit.repository import InMemoryAuditRepository, PostgresAuditRepository
+from app.auth.oidc import OperatorIdentity
 from app.bootstrap.container import AppContainer
 from app.observability.tracing import correlation_context
 from app.storage.models import Base
@@ -109,3 +110,40 @@ def test_postgres_audit_repository_saves_event_with_sqlite_safe_pattern() -> Non
     assert events[0].payload == {"amount": 1_000}
     assert events[0].actor == "agent"
     assert events[0].correlation_id == "corr-789"
+
+
+def test_audit_event_stores_operator_identity_fields() -> None:
+    repository = InMemoryAuditRepository()
+    logger = InMemoryAuditLogger(repository=repository)
+    identity = OperatorIdentity(
+        subject="operator-subject-123",
+        email="operator@example.test",
+        display_name="Example Operator",
+        roles=["approver"],
+    )
+
+    logger.log_event(
+        "approval.reviewed",
+        {"approval_id": "approval-123"},
+        identity=identity,
+    )
+
+    event = repository.list_events()[0]
+    assert event.operator_subject == "operator-subject-123"
+    assert event.operator_email == "operator@example.test"
+    assert event.operator_display_name == "Example Operator"
+
+
+def test_postgres_audit_repository_stores_operator_identity_fields() -> None:
+    repository = build_postgres_audit_repository()
+
+    event = repository.save_event(
+        event_type="approval.reviewed",
+        payload={},
+        operator_subject="operator-subject-456",
+        operator_email="reviewer@example.test",
+        operator_display_name="Review Operator",
+    )
+
+    assert event.operator_subject == "operator-subject-456"
+    assert repository.list_events()[0].operator_email == "reviewer@example.test"

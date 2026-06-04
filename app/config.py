@@ -66,10 +66,17 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     log_level: str = "INFO"
     log_format: str = "json"
+    auth_mode: str = "token"
     operator_auth_enabled: bool = True
     operator_viewer_token: str | None = None
     operator_approver_token: str | None = None
     operator_admin_token: str | None = None
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_development_subject: str = "development-operator"
+    oidc_development_email: str | None = "operator@example.test"
+    oidc_development_display_name: str = "Development Operator"
+    oidc_development_roles: str = "admin"
     approval_expiry_minutes: int = 30
     approval_required_reviewers: int = 1
     high_risk_approval_required_reviewers: int = 2
