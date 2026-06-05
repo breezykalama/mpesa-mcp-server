@@ -459,6 +459,8 @@ For token and future OIDC operator identity architecture, see [docs/operator-ide
 
 For Microsoft Entra ID setup using the standards-based OIDC/JWKS implementation, see [docs/entra-id-setup.md](docs/entra-id-setup.md).
 
+For non-production validation against a real Entra tenant, see [docs/entra-validation-runbook.md](docs/entra-validation-runbook.md).
+
 ```bash
 docker compose up --build
 ```
