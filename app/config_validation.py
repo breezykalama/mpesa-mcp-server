@@ -90,15 +90,25 @@ def _validate_identity_settings(settings: Settings) -> list[ConfigValidationIssu
     if settings.auth_mode != "oidc":
         return []
 
+    issues: list[ConfigValidationIssue] = []
+    if settings.oidc_provider_mode not in {"development", "jwks"}:
+        issues.append(
+            ConfigValidationIssue(
+                "OIDC_PROVIDER_MODE",
+                "must be one of development or jwks",
+            )
+        )
+
     required_settings = {
         "OIDC_ISSUER": settings.oidc_issuer,
         "OIDC_AUDIENCE": settings.oidc_audience,
     }
-    return [
+    issues.extend(
         ConfigValidationIssue(name, "required when AUTH_MODE=oidc")
         for name, value in required_settings.items()
         if not _has_value(value)
-    ]
+    )
+    return issues
 
 
 def _validate_callback_secret_settings(settings: Settings) -> list[ConfigValidationIssue]:
