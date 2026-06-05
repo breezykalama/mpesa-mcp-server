@@ -457,6 +457,8 @@ For secret handling, startup validation, and CI secret scanning expectations, se
 
 For token and future OIDC operator identity architecture, see [docs/operator-identity.md](docs/operator-identity.md).
 
+For Microsoft Entra ID setup using the standards-based OIDC/JWKS implementation, see [docs/entra-id-setup.md](docs/entra-id-setup.md).
+
 ```bash
 docker compose up --build
 ```

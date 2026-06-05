@@ -4,6 +4,8 @@ The operator API uses a normalized `OperatorIdentity` model so authentication me
 
 This foundation supports the current static token mode, a no-network OIDC development placeholder, and standards-based OIDC JWT verification using issuer discovery and JWKS.
 
+Microsoft Entra ID is the primary documented enterprise identity provider example. See [Microsoft Entra ID Integration Guide](entra-id-setup.md).
+
 ## Identity Model
 
 Every authentication mode resolves credentials into:
@@ -116,6 +118,8 @@ Future production mapping should be explicit, least-privilege, and environment-s
 ## Future Entra ID Integration Notes
 
 Microsoft Entra ID and Google Workspace can use the standards-based JWKS provider when their tokens expose suitable claims and group/app-role mappings. A future provider-specific adapter may still be useful for tenant-specific behavior.
+
+For a full enterprise setup walkthrough, see [Microsoft Entra ID Integration Guide](entra-id-setup.md).
 
 For Entra ID, production setup should:
 
