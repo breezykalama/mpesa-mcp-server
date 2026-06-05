@@ -131,6 +131,22 @@ def test_oidc_mode_with_required_config_passes() -> None:
     validate_startup_settings(settings)
 
 
+def test_oidc_provider_mode_invalid_config_fails() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        auth_mode="oidc",
+        oidc_provider_mode="unsupported",
+        operator_auth_enabled=True,
+        oidc_issuer="https://identity.example.test",
+        oidc_audience="mpesa-operator-api",
+    )
+
+    with pytest.raises(StartupConfigValidationError) as exc_info:
+        validate_startup_settings(settings)
+
+    assert "OIDC_PROVIDER_MODE" in str(exc_info.value)
+
+
 def test_callback_secret_required_outside_development() -> None:
     settings = Settings(
         database_url="postgresql+asyncpg://user:pass@localhost:5432/test",

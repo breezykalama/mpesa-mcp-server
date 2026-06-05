@@ -14,6 +14,7 @@ dependencies = [
     "httpx",
     "mcp",
     "psycopg[binary]",
+    "pyjwt[crypto]",
     "pydantic",
     "pydantic-settings",
     "python-dotenv",

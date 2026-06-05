@@ -73,6 +73,13 @@ class Settings(BaseSettings):
     operator_admin_token: str | None = None
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
+    oidc_provider_mode: str = "development"
+    oidc_jwks_cache_seconds: int = 3600
+    oidc_clock_skew_seconds: int = 60
+    oidc_email_claim: str = "email"
+    oidc_name_claim: str = "name"
+    oidc_groups_claim: str = "groups"
+    oidc_roles_claim: str = "roles"
     oidc_development_subject: str = "development-operator"
     oidc_development_email: str | None = "operator@example.test"
     oidc_development_display_name: str = "Development Operator"

@@ -11,6 +11,7 @@ from fastapi import Depends, Header, HTTPException, status
 from app.auth.oidc import (
     ROLE_LEVELS,
     DevelopmentOIDCIdentityProvider,
+    JWKSOIDCIdentityProvider,
     OperatorIdentity,
     OperatorIdentityProviderProtocol,
     OperatorRole,
@@ -157,7 +158,10 @@ def _identity_provider(container: AppContainer) -> OperatorIdentityProviderProto
     if container.settings.auth_mode == "token":
         return TokenIdentityProvider(container)
     if container.settings.auth_mode == "oidc":
-        return DevelopmentOIDCIdentityProvider(container.settings)
+        if container.settings.oidc_provider_mode == "development":
+            return DevelopmentOIDCIdentityProvider(container.settings)
+        if container.settings.oidc_provider_mode == "jwks":
+            return JWKSOIDCIdentityProvider(container.settings)
     raise ValueError("AUTH_MODE must be one of: token, oidc.")
 
 

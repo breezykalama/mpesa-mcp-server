@@ -169,6 +169,7 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Add lightweight operator bearer-token authentication.
 - [x] **Done:** Add normalized operator identity and OIDC provider abstractions.
 - [x] **Done:** Add OIDC group-to-platform-role mapping architecture.
+- [x] **Done:** Add standards-based OIDC JWT verification using discovery and JWKS.
 - [x] **Done:** Add no-network development OIDC identity provider for tests and architecture validation.
 - [x] **Done:** Add optional operator identity and mapped role fields to audit events.
 - [x] **Done:** Add startup validation for required OIDC issuer and audience configuration.
@@ -178,7 +179,7 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Prevent viewers from approving payments.
 - [x] **Done:** Restrict reconciliation run endpoint to admins.
 - [x] **Done:** Avoid logging raw tokens.
-- [ ] **Todo:** Replace static operator tokens with a production SSO/OIDC provider adapter.
+- [ ] **Todo:** Configure and validate a real Entra ID, Google Workspace, or equivalent OIDC tenant.
 - [ ] **Todo:** Add real operator identity provider.
 - [ ] **Todo:** Add token/session expiry.
 - [ ] **Todo:** Add token rotation process.
