@@ -55,4 +55,5 @@ class InMemoryAuditLogger:
             operator_subject=identity.subject if identity else None,
             operator_email=identity.email if identity else None,
             operator_display_name=identity.display_name if identity else None,
+            operator_roles=list(identity.roles) if identity else None,
         )

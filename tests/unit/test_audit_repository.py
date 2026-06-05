@@ -132,6 +132,7 @@ def test_audit_event_stores_operator_identity_fields() -> None:
     assert event.operator_subject == "operator-subject-123"
     assert event.operator_email == "operator@example.test"
     assert event.operator_display_name == "Example Operator"
+    assert event.operator_roles == ["approver"]
 
 
 def test_postgres_audit_repository_stores_operator_identity_fields() -> None:
@@ -143,7 +144,9 @@ def test_postgres_audit_repository_stores_operator_identity_fields() -> None:
         operator_subject="operator-subject-456",
         operator_email="reviewer@example.test",
         operator_display_name="Review Operator",
+        operator_roles=["viewer", "approver"],
     )
 
     assert event.operator_subject == "operator-subject-456"
     assert repository.list_events()[0].operator_email == "reviewer@example.test"
+    assert repository.list_events()[0].operator_roles == ["viewer", "approver"]

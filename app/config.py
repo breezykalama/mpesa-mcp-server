@@ -76,7 +76,10 @@ class Settings(BaseSettings):
     oidc_development_subject: str = "development-operator"
     oidc_development_email: str | None = "operator@example.test"
     oidc_development_display_name: str = "Development Operator"
-    oidc_development_roles: str = "admin"
+    oidc_development_groups: str = ""
+    oidc_viewer_groups: str = ""
+    oidc_approver_groups: str = ""
+    oidc_admin_groups: str = ""
     approval_expiry_minutes: int = 30
     approval_required_reviewers: int = 1
     high_risk_approval_required_reviewers: int = 2

@@ -27,7 +27,9 @@ def test_development_oidc_provider_returns_configured_identity() -> None:
             oidc_development_subject="oidc-subject-123",
             oidc_development_email="oidc@example.test",
             oidc_development_display_name="OIDC Operator",
-            oidc_development_roles="viewer,approver",
+            oidc_development_groups="finance_viewers,finance_approvers",
+            oidc_viewer_groups="finance_viewers",
+            oidc_approver_groups="finance_approvers",
         )
     )
 
@@ -36,6 +38,7 @@ def test_development_oidc_provider_returns_configured_identity() -> None:
     assert identity is not None
     assert identity.subject == "oidc-subject-123"
     assert identity.email == "oidc@example.test"
+    assert identity.groups == ["finance_viewers", "finance_approvers"]
     assert identity.roles == ["viewer", "approver"]
     assert identity.role == "approver"
 
@@ -44,6 +47,18 @@ def test_development_oidc_provider_rejects_missing_credential() -> None:
     provider = DevelopmentOIDCIdentityProvider(Settings(operator_auth_enabled=False))
 
     assert provider.authenticate(None) is None
+
+
+def test_development_oidc_provider_rejects_unmapped_groups() -> None:
+    provider = DevelopmentOIDCIdentityProvider(
+        Settings(
+            operator_auth_enabled=False,
+            oidc_development_groups="unknown_group",
+            oidc_viewer_groups="finance_viewers",
+        )
+    )
+
+    assert provider.authenticate("development-bearer-credential") is None
 
 
 def test_token_identity_provider_preserves_static_token_mapping() -> None:

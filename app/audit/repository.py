@@ -25,6 +25,7 @@ class AuditEvent(BaseModel):
     operator_subject: str | None = None
     operator_email: str | None = None
     operator_display_name: str | None = None
+    operator_roles: list[str] | None = None
 
 
 class AuditRepositoryProtocol(Protocol):
@@ -40,6 +41,7 @@ class AuditRepositoryProtocol(Protocol):
         operator_subject: str | None = None,
         operator_email: str | None = None,
         operator_display_name: str | None = None,
+        operator_roles: list[str] | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -66,6 +68,7 @@ class InMemoryAuditRepository:
         operator_subject: str | None = None,
         operator_email: str | None = None,
         operator_display_name: str | None = None,
+        operator_roles: list[str] | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -78,6 +81,7 @@ class InMemoryAuditRepository:
             operator_subject=operator_subject,
             operator_email=operator_email,
             operator_display_name=operator_display_name,
+            operator_roles=operator_roles,
         )
         self._events.append(event)
         return event
@@ -113,6 +117,7 @@ class PostgresAuditRepository:
         operator_subject: str | None = None,
         operator_email: str | None = None,
         operator_display_name: str | None = None,
+        operator_roles: list[str] | None = None,
     ) -> AuditEvent:
         """Save an audit event."""
 
@@ -125,6 +130,7 @@ class PostgresAuditRepository:
             operator_subject=operator_subject,
             operator_email=operator_email,
             operator_display_name=operator_display_name,
+            operator_roles=operator_roles,
             created_at=datetime.now(UTC),
         )
         with self._session_factory() as session:
@@ -161,5 +167,6 @@ class PostgresAuditRepository:
             operator_subject=model.operator_subject,
             operator_email=model.operator_email,
             operator_display_name=model.operator_display_name,
+            operator_roles=model.operator_roles,
             created_at=model.created_at,
         )

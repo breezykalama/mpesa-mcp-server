@@ -168,8 +168,9 @@ These items should be complete before internal users or operators depend on the 
 
 - [x] **Done:** Add lightweight operator bearer-token authentication.
 - [x] **Done:** Add normalized operator identity and OIDC provider abstractions.
+- [x] **Done:** Add OIDC group-to-platform-role mapping architecture.
 - [x] **Done:** Add no-network development OIDC identity provider for tests and architecture validation.
-- [x] **Done:** Add optional operator identity fields to audit events.
+- [x] **Done:** Add optional operator identity and mapped role fields to audit events.
 - [x] **Done:** Add startup validation for required OIDC issuer and audience configuration.
 - [x] **Done:** Add viewer, approver, and admin roles.
 - [x] **Done:** Protect operator endpoints.

@@ -193,7 +193,8 @@ def test_oidc_mode_uses_normalized_operator_identity() -> None:
             oidc_issuer="https://identity.example.test",
             oidc_audience="mpesa-operator-api",
             oidc_development_subject="oidc-admin-subject",
-            oidc_development_roles="admin",
+            oidc_development_groups="finance_admins",
+            oidc_admin_groups="finance_admins",
         )
     )
 

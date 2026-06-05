@@ -94,3 +94,4 @@ class AuditEventModel(Base):
     operator_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     operator_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     operator_display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    operator_roles: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
