@@ -152,13 +152,15 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Fail closed when Redis-backed rate limiting or callback replay protection is unavailable.
 - [x] **Done:** Strengthen readiness checks with dependency details.
 - [x] **Done:** Add CI secret scanning with gitleaks.
+- [x] **Done:** Make CI secret scanning effective: extend gitleaks' default rules, apply `.gitleaks.toml` through supported settings, and scan push and pull request commit ranges with full history.
 - [x] **Done:** Add security model documentation for secret handling expectations.
 - [ ] **Todo:** Use a real secret manager for production credentials.
 - [ ] **Todo:** Store Daraja credentials outside flat files.
 - [ ] **Todo:** Store callback secret outside flat files.
 - [ ] **Todo:** Store operator auth secrets outside flat files.
 - [ ] **Todo:** Add secret rotation process.
-- [ ] **Todo:** Add secret scanning in CI.
+- [ ] **Todo:** Run a one-time full-history secret scan; scans before the rule-set fix ran with no detection rules.
+- [ ] **Todo:** Evaluate `gitleaks-action@v3` (v2 targets the deprecated Node 20 runtime).
 
 ### Observability
 

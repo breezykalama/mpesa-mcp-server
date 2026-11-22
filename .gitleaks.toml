@@ -1,5 +1,11 @@
 title = "mpesa-mcp-server secret scanning"
 
+# Without this, gitleaks loads only this file and runs with zero detection rules.
+# useDefault merges gitleaks' built-in rule set; the allowlist below only exempts
+# documented placeholders and test-only fake values.
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Allow documented local placeholders and test-only fake values."
 regexes = [

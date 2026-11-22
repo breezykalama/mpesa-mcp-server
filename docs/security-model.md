@@ -86,9 +86,11 @@ The platform should not silently disable safety controls in production-like mode
 
 ## CI Secret Scanning
 
-GitHub Actions runs gitleaks against the checked-out repository. The scan is intended to catch accidental credentials before they are merged or pushed further.
+GitHub Actions runs `gitleaks/gitleaks-action@v2` (gitleaks 8.24.3, pinned) on every push and pull request. The action scans the commits in the pushed range or in the pull request, not the working tree, so the checkout uses full history (`fetch-depth: 0`).
 
-The current scan checks the working tree/current checkout. Full historical scanning can be added later before production credential handling begins.
+The action accepts no `with:` inputs. It is configured through environment variables, and `GITLEAKS_CONFIG` points it at `.gitleaks.toml`. That file extends gitleaks' default rule set (`[extend] useDefault = true`) and allowlists only documented placeholders and test-only fake values. Scanner errors fail the job; they are never treated as a clean result.
+
+Before this was corrected, `.gitleaks.toml` defined no rules and did not extend the defaults, so earlier CI secret scans ran with zero detection rules. Commits that only passed those scans have not been meaningfully scanned. A one-time full-history scan is still required before production credentials are handled.
 
 ## Rotation Expectations
 
