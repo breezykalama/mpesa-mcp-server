@@ -35,6 +35,8 @@ def get_operator_principal(
             subject="local-admin",
             display_name="Local Administrator",
             roles=["admin"],
+            authentication_method="auth_disabled",
+            principal_type="unknown",
         )
         logger.info(
             "Operator auth disabled; local principal granted.",
@@ -128,6 +130,8 @@ class TokenIdentityProvider:
                     subject="operator-viewer",
                     display_name="Operator Viewer",
                     roles=["viewer"],
+                    authentication_method="static_token",
+                    principal_type="unknown",
                 ),
             ),
             (
@@ -136,6 +140,8 @@ class TokenIdentityProvider:
                     subject="operator-approver",
                     display_name="Operator Approver",
                     roles=["approver"],
+                    authentication_method="static_token",
+                    principal_type="unknown",
                 ),
             ),
             (
@@ -144,6 +150,8 @@ class TokenIdentityProvider:
                     subject="operator-admin",
                     display_name="Operator Administrator",
                     roles=["admin"],
+                    authentication_method="static_token",
+                    principal_type="unknown",
                 ),
             ),
         )

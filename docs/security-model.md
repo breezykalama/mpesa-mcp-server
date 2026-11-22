@@ -31,6 +31,23 @@ Outside development-like environments, `CALLBACK_SHARED_SECRET` must be configur
 
 Redis-backed modes require a valid `REDIS_URL`, and Postgres storage requires a PostgreSQL `DATABASE_URL`.
 
+## Approval Authority
+
+AI agents may request payments, but they must never authorize financial actions.
+
+- No MCP tool approves or rejects approval requests. `approve_payment_request` and `reject_payment_request` are listed in `AGENT_FORBIDDEN_TOOLS` and are denied unconditionally; configuration cannot re-enable them, and the MCP server refuses to register them.
+- Approve and reject decisions are only available through the operator approval API, and the reviewer is always the server-authenticated `OperatorIdentity`. Request bodies cannot supply reviewer identity, and there is no fallback or synthetic reviewer.
+- Every identity records its `authentication_method` (`oidc_jwks`, `oidc_development`, `static_token`, `auth_disabled`) and `principal_type` (`human`, `application`, `unknown`). Only `oidc_jwks` with a delegated user token (`scp` claim, not `idtyp=app`) counts as a verified human.
+- Outside development environments, only verified humans may approve or reject. App-only identities are always denied. OIDC JWKS identities must be verified humans in every environment: a cryptographically valid token classified `unknown` never receives approval authority. The development-only single-reviewer exception applies solely to `static_token`, `oidc_development`, and `auth_disabled` identities, and never when `DARAJA_MODE=production`. Multi-reviewer quorums count only verified humans in every environment, because shared tokens and development identities cannot prove distinct reviewers.
+- Rejection is only possible from `pending`.
+- Decision and denied-attempt audit events record the reviewer's subject, email, display name, and roles. Raw tokens, credentials, and raw identity-provider claims are never recorded.
+
+Known limitations, tracked in the production readiness checklist:
+
+- Approvals are stored in memory per process. MCP-originated approvals cannot be completed by human operators in the separate API process; this is intentionally left blocked.
+- Approval decisions, expiry, and approved-payment execution are serialized with one process-local lock. The lock is held for the duration of the payment-provider call, so a slow provider can temporarily block approval listing and expiry in the same process. It does not coordinate across processes or workers: running multiple API workers or processes is not safe for approvals. The lock can only be removed once durable, transactional approval state and execution claims exist.
+- Reviewer eligibility is evaluated before any approval state handling. Ineligible principals receive `403 reviewer_not_authorized`, see no approval details, and cannot trigger expiry or any other state change.
+
 ## Callback Source Verification
 
 The app does not claim to cryptographically verify Safaricom callbacks directly.
@@ -69,9 +86,11 @@ The platform should not silently disable safety controls in production-like mode
 
 ## CI Secret Scanning
 
-GitHub Actions runs gitleaks against the checked-out repository. The scan is intended to catch accidental credentials before they are merged or pushed further.
+GitHub Actions runs `gitleaks/gitleaks-action@v2` (gitleaks 8.24.3, pinned) on every push and pull request. The action scans the commits in the pushed range or in the pull request, not the working tree, so the checkout uses full history (`fetch-depth: 0`).
 
-The current scan checks the working tree/current checkout. Full historical scanning can be added later before production credential handling begins.
+The action accepts no `with:` inputs. It is configured through environment variables, and `GITLEAKS_CONFIG` points it at `.gitleaks.toml`. That file extends gitleaks' default rule set (`[extend] useDefault = true`) and allowlists only documented placeholders and test-only fake values. Scanner errors fail the job; they are never treated as a clean result.
+
+Before this was corrected, `.gitleaks.toml` defined no rules and did not extend the defaults, so earlier CI secret scans ran with zero detection rules. Commits that only passed those scans have not been meaningfully scanned. A one-time full-history scan is still required before production credentials are handled.
 
 ## Rotation Expectations
 

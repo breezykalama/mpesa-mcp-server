@@ -141,7 +141,9 @@ def test_admin_can_do_everything() -> None:
     assert approval_response.json()["status"] == "approved"
 
 
-def test_high_risk_approval_requires_two_distinct_operator_reviews() -> None:
+def test_shared_static_tokens_cannot_satisfy_multi_reviewer_approval() -> None:
+    """Static tokens are shared credentials and cannot prove two distinct humans."""
+
     container = build_auth_container()
     approval_id = create_pending_approval(container, amount=50_000)
 
@@ -164,15 +166,14 @@ def test_high_risk_approval_requires_two_distinct_operator_reviews() -> None:
         token=ADMIN_TOKEN,
     )
 
-    assert first_response.status_code == 200
-    assert first_response.json()["status"] == "partially_approved"
-    assert first_response.json()["approval"]["review_count"] == 1
-    assert duplicate_response.status_code == 200
-    assert duplicate_response.json()["status"] == "blocked"
-    assert second_response.status_code == 200
-    assert second_response.json()["status"] == "approved"
-    assert second_response.json()["approval"]["review_count"] == 2
-    assert second_response.json()["payment"]["status"] == "pending"
+    for response in (first_response, duplicate_response, second_response):
+        assert response.status_code == 403
+        assert response.json()["status"] == "reviewer_not_authorized"
+        assert response.json()["approval"] is None
+    approval = container.approval_service.get_approval_request(approval_id)
+    assert approval is not None
+    assert approval.status == "pending"
+    assert container.transaction_repository.list_transactions() == []
 
 
 def test_auth_disabled_allows_local_access() -> None:

@@ -19,7 +19,6 @@ from app.config import Settings
 from app.daraja.client import MockDarajaClient
 from app.mcp.schemas import McpToolResponse
 from app.mcp.tools import (
-    approve_payment_request_tool,
     check_payment_status_tool,
     check_transaction_status_tool,
     generate_receipt_tool,
@@ -164,11 +163,15 @@ def run_legacy_mpesa_flow(container: AppContainer) -> dict[str, Any]:
     outputs["approval_required"] = _tool_response(approval_response)
 
     approval_id = _required_data_value(approval_response, "approval_id")
-    approval_execution_response = approve_payment_request_tool(
-        {"approval_id": approval_id},
-        container.payment_service,
-    )
-    outputs["approve_payment_request"] = _tool_response(approval_execution_response)
+    agent_approval_decision = container.tool_policy.evaluate("approve_payment_request")
+    pending_approval = container.approval_service.get_approval_request(str(approval_id))
+    outputs["agent_approval_attempt"] = {
+        "status": agent_approval_decision.status,
+        "allowed": agent_approval_decision.allowed,
+        "reason": agent_approval_decision.reason,
+        "approval_status": pending_approval.status if pending_approval else None,
+        "next_step": "A human operator must approve via the authenticated operator API.",
+    }
 
     reconciliation_response = run_reconciliation_tool({}, container.reconciliation_service)
     outputs["run_reconciliation"] = _tool_response(reconciliation_response)

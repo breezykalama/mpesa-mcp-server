@@ -24,7 +24,7 @@ from app.callbacks.source_verifier import (
     StrictBlockCallbackSourceVerifier,
     TrustedProxyCallbackSourceVerifier,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, allows_development_approval_authority, get_settings
 from app.daraja.client import DarajaClientProtocol, MockDarajaClient, RealDarajaClient
 from app.observability.metrics import InMemoryMetricsRecorder
 from app.payments.providers import (
@@ -108,6 +108,9 @@ class AppContainer:
                 resolved_settings.high_risk_approval_required_reviewers
             ),
             high_risk_amount_threshold=resolved_settings.high_risk_amount_threshold,
+            allow_development_reviewers=allows_development_approval_authority(
+                resolved_settings
+            ),
         )
 
         return cls(

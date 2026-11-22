@@ -124,6 +124,66 @@ def test_token_without_mapped_groups_rejected() -> None:
     assert provider.authenticate(token) is None
 
 
+def test_delegated_user_token_is_classified_as_verified_human() -> None:
+    key_pair = create_key_pair(kid="key-delegated")
+    provider = build_provider(key_pair=key_pair)
+    token = create_token(
+        key_pair=key_pair,
+        groups=["finance_approvers"],
+        extra_claims={"scp": "operator.access"},
+    )
+
+    identity = provider.authenticate(token)
+
+    assert identity is not None
+    assert identity.authentication_method == "oidc_jwks"
+    assert identity.principal_type == "human"
+    assert identity.is_verified_human is True
+
+
+def test_app_only_token_is_classified_as_application() -> None:
+    key_pair = create_key_pair(kid="key-app-only")
+    provider = build_provider(key_pair=key_pair)
+    token = create_token(
+        key_pair=key_pair,
+        roles=["finance_approvers"],
+        extra_claims={"idtyp": "app"},
+    )
+
+    identity = provider.authenticate(token)
+
+    assert identity is not None
+    assert identity.principal_type == "application"
+    assert identity.is_verified_human is False
+
+
+def test_app_only_token_with_scope_claim_is_still_application() -> None:
+    key_pair = create_key_pair(kid="key-app-scp")
+    provider = build_provider(key_pair=key_pair)
+    token = create_token(
+        key_pair=key_pair,
+        roles=["finance_approvers"],
+        extra_claims={"idtyp": "app", "scp": "operator.access"},
+    )
+
+    identity = provider.authenticate(token)
+
+    assert identity is not None
+    assert identity.principal_type == "application"
+
+
+def test_token_without_delegation_evidence_is_not_a_verified_human() -> None:
+    key_pair = create_key_pair(kid="key-no-scp")
+    provider = build_provider(key_pair=key_pair)
+    token = create_token(key_pair=key_pair, groups=["finance_approvers"])
+
+    identity = provider.authenticate(token)
+
+    assert identity is not None
+    assert identity.principal_type == "unknown"
+    assert identity.is_verified_human is False
+
+
 def build_provider(
     *,
     key_pair: dict[str, Any],
@@ -185,6 +245,7 @@ def create_token(
     audience: str = AUDIENCE,
     expires_at: datetime | None = None,
     token_kid: str | None = None,
+    extra_claims: dict[str, object] | None = None,
 ) -> str:
     now = datetime.now(UTC)
     claims: dict[str, object] = {
@@ -201,6 +262,8 @@ def create_token(
         claims["groups"] = groups
     if roles is not None:
         claims["roles"] = roles
+    if extra_claims is not None:
+        claims.update(extra_claims)
 
     return jwt.encode(
         claims,

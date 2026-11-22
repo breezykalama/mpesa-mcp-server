@@ -78,8 +78,6 @@ def test_mcp_server_uses_container() -> None:
         "generate_receipt",
         "get_today_summary",
         "get_failed_transactions",
-        "approve_payment_request",
-        "reject_payment_request",
         "run_reconciliation",
     }
     assert container.transaction_repository.list_transactions() != []

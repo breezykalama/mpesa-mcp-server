@@ -99,6 +99,24 @@ class Settings(BaseSettings):
     )
 
 
+DEVELOPMENT_ENVIRONMENTS = frozenset({"development", "dev", "local", "test"})
+
+
+def allows_development_approval_authority(settings: Settings) -> bool:
+    """Return whether non-verified operator identities may make approval decisions.
+
+    Development identities, shared static tokens, and disabled-auth principals are only
+    accepted as single reviewers in explicitly development-like environments that are
+    not configured for production Daraja. Everywhere else, approval decisions require
+    an IdP-verified human identity. There is intentionally no setting that widens this.
+    """
+
+    return (
+        settings.app_env.strip().lower() in DEVELOPMENT_ENVIRONMENTS
+        and settings.daraja_mode != "production"
+    )
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return cached application settings."""

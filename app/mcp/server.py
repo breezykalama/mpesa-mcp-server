@@ -11,7 +11,6 @@ from mcp.server.fastmcp import FastMCP
 from app.bootstrap.container import AppContainer, create_app_container
 from app.logging.config import configure_logging
 from app.mcp.tools import (
-    approve_payment_request_tool,
     check_payment_status_tool,
     check_transaction_status_tool,
     generate_receipt_tool,
@@ -19,9 +18,9 @@ from app.mcp.tools import (
     get_today_summary_tool,
     initiate_payment_tool,
     initiate_stk_push_tool,
-    reject_payment_request_tool,
     run_reconciliation_tool,
 )
+from app.policy.tool_policy import AGENT_FORBIDDEN_TOOLS
 
 MCP_SERVER_NAME = "mpesa-mcp-server"
 REGISTERED_TOOL_NAMES = (
@@ -32,8 +31,6 @@ REGISTERED_TOOL_NAMES = (
     "generate_receipt",
     "get_today_summary",
     "get_failed_transactions",
-    "approve_payment_request",
-    "reject_payment_request",
     "run_reconciliation",
 )
 
@@ -153,30 +150,6 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         )
         return response.model_dump(mode="json")
 
-    def approve_payment_request(approval_id: str) -> dict[str, Any]:
-        response = approve_payment_request_tool(
-            {"approval_id": approval_id},
-            container.payment_service,
-            rate_limiter=container.rate_limiter,
-            rate_limit_enabled=container.settings.rate_limit_enabled,
-            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
-            rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
-            tool_policy=container.tool_policy,
-        )
-        return response.model_dump(mode="json")
-
-    def reject_payment_request(approval_id: str) -> dict[str, Any]:
-        response = reject_payment_request_tool(
-            {"approval_id": approval_id},
-            container.approval_service,
-            rate_limiter=container.rate_limiter,
-            rate_limit_enabled=container.settings.rate_limit_enabled,
-            rate_limit_window_seconds=container.settings.rate_limit_window_seconds,
-            rate_limit_max_requests=container.settings.rate_limit_max_approval_actions,
-            tool_policy=container.tool_policy,
-        )
-        return response.model_dump(mode="json")
-
     def run_reconciliation() -> dict[str, Any]:
         response = run_reconciliation_tool(
             {},
@@ -193,8 +166,6 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
         "generate_receipt": generate_receipt,
         "get_today_summary": get_today_summary,
         "get_failed_transactions": get_failed_transactions,
-        "approve_payment_request": approve_payment_request,
-        "reject_payment_request": reject_payment_request,
         "run_reconciliation": run_reconciliation,
     }
 
@@ -213,7 +184,15 @@ def create_mcp_server(container: AppContainer | None = None) -> FastMCP:
     )
     server = FastMCP(MCP_SERVER_NAME)
 
-    for tool_name, handler in create_tool_handlers(resolved_container).items():
+    handlers = create_tool_handlers(resolved_container)
+    forbidden_tools = AGENT_FORBIDDEN_TOOLS.intersection(handlers)
+    if forbidden_tools:
+        raise RuntimeError(
+            "Approval decision tools must never be exposed to MCP agents: "
+            + ", ".join(sorted(forbidden_tools))
+        )
+
+    for tool_name, handler in handlers.items():
         server.tool(name=tool_name)(handler)
 
     return server

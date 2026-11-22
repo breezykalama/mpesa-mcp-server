@@ -72,7 +72,10 @@ These items should be complete before sending even a small real payment through 
 
 - [x] **Done:** Create approval requests for risky payments.
 - [x] **Done:** Avoid calling provider while approval is pending.
-- [x] **Done:** Execute approved payment exactly once.
+- [x] **Done (single process only):** Execute approved payment exactly once. Decisions, expiry, and execution are serialized by a process-local lock that is held across the payment-provider call; this can temporarily block approval listing and expiry, and it is **not** a guarantee across processes or workers.
+- [x] **Done:** Check reviewer eligibility before any approval state handling, expiry, or execution; ineligible principals receive `403 reviewer_not_authorized` with no state change.
+- [ ] **Todo:** Remove the process-local approval lock. Blocked on durable, transactional approval persistence and database-backed execution claims; the provider call must not run under a lock or open transaction.
+- [ ] **Todo:** Add durable execution claims for direct (below-limit) payments; today they rely on a non-atomic idempotency lookup before the provider call.
 - [x] **Done:** Preserve idempotency during approval execution.
 - [x] **Done:** Support approval expiry.
 - [x] **Done:** Support stale approval expiration.
@@ -80,6 +83,17 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Prevent rejected approvals from executing.
 - [x] **Done:** Prevent the same reviewer approving twice.
 - [x] **Done:** Show review progress in the React dashboard.
+- [x] **Done:** Remove AI agent approval authority. `approve_payment_request` and `reject_payment_request` are not registered as MCP tools, are unconditionally denied by `ToolPolicyEngine`, cannot be re-enabled by configuration, and the MCP server refuses to start if a forbidden tool is registered.
+- [x] **Done:** Remove synthetic reviewer identities (`mcp_operator`, `system_operator`). Approve and reject require a server-authenticated `OperatorIdentity`; there is no default reviewer.
+- [x] **Done:** Allow rejection only from `pending`; approved, rejected, and expired approvals keep their state.
+- [x] **Done:** Count only IdP-verified human identities (OIDC JWKS delegated tokens) toward multi-reviewer quorums.
+- [x] **Done:** Deny app-only (`idtyp=app`) and non-delegated tokens as reviewers.
+- [x] **Done:** Deny static-token, development-OIDC, and auth-disabled reviewers outside development environments.
+- [x] **Done:** Deny unclassified (`unknown`) and app-only OIDC JWKS reviewers in every environment; restrict the development exception to development authentication methods.
+- [x] **Done:** Record the authenticated operator identity (subject, email, display name, roles) on approval decision and denied-attempt audit events; record agent requests with actor `mcp_agent`.
+- [ ] **Todo:** Add durable, atomic approval persistence shared by the MCP and API processes. Until then, approvals created by the MCP server process cannot be seen or completed by human operators and will expire (intentionally blocked).
+- [ ] **Todo:** Make approval execution concurrency-safe across processes and workers (atomic state transition before the provider call).
+- [ ] **Todo:** Validate human approval authority end to end against a real identity provider tenant.
 - [ ] **Todo:** Add approval comments or decision reason fields.
 - [ ] **Todo:** Add operator notification mechanism for pending approvals.
 - [ ] **Todo:** Add scheduled stale approval expiry outside manual endpoint calls.
@@ -138,13 +152,15 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Fail closed when Redis-backed rate limiting or callback replay protection is unavailable.
 - [x] **Done:** Strengthen readiness checks with dependency details.
 - [x] **Done:** Add CI secret scanning with gitleaks.
+- [x] **Done:** Make CI secret scanning effective: extend gitleaks' default rules, apply `.gitleaks.toml` through supported settings, and scan push and pull request commit ranges with full history.
 - [x] **Done:** Add security model documentation for secret handling expectations.
 - [ ] **Todo:** Use a real secret manager for production credentials.
 - [ ] **Todo:** Store Daraja credentials outside flat files.
 - [ ] **Todo:** Store callback secret outside flat files.
 - [ ] **Todo:** Store operator auth secrets outside flat files.
 - [ ] **Todo:** Add secret rotation process.
-- [ ] **Todo:** Add secret scanning in CI.
+- [ ] **Todo:** Run a one-time full-history secret scan; scans before the rule-set fix ran with no detection rules.
+- [ ] **Todo:** Evaluate `gitleaks-action@v3` (v2 targets the deprecated Node 20 runtime).
 
 ### Observability
 
@@ -172,6 +188,11 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Add standards-based OIDC JWT verification using discovery and JWKS.
 - [x] **Done:** Add no-network development OIDC identity provider for tests and architecture validation.
 - [x] **Done:** Add optional operator identity and mapped role fields to audit events.
+- [x] **Done:** Populate operator identity fields on approval decision audit events.
+- [x] **Done:** Classify OIDC principals as delegated human, application, or unknown; record authentication method on every operator identity.
+- [ ] **Todo:** Block `OPERATOR_AUTH_ENABLED=false` and `OIDC_PROVIDER_MODE=development` at startup in production-like environments (today they are denied approval authority but still grant read and admin access).
+- [ ] **Todo:** Make the production environment gate fail closed: `APP_ENV` currently defaults to `development`, which grants development approval authority to deployments that omit it unless `DARAJA_MODE=production`.
+- [ ] **Todo:** Harden OIDC verification: reuse one provider per container so discovery/JWKS caching works, refresh JWKS on unknown `kid`, validate the discovery `issuer`, validate token type, allowlist operator client IDs (`azp`/`appid`), and require a specific delegated scope before treating a token as a verified human.
 - [x] **Done:** Add startup validation for required OIDC issuer and audience configuration.
 - [x] **Done:** Add viewer, approver, and admin roles.
 - [x] **Done:** Protect operator endpoints.
@@ -191,7 +212,8 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Support enabled, blocked, and approval-required tool lists.
 - [x] **Done:** Rate limit sensitive MCP tools.
 - [x] **Done:** Add Redis-backed rate limiter.
-- [x] **Done:** Audit MCP-driven payment and approval activity.
+- [x] **Done:** Audit MCP-driven payment activity, attributed to `mcp_agent`.
+- [x] **Done:** Ensure MCP agents cannot approve or reject approval requests.
 - [ ] **Todo:** Define trusted MCP clients.
 - [ ] **Todo:** Add MCP client authentication if MCP is exposed beyond local/internal use.
 - [ ] **Todo:** Add per-client rate limits.

@@ -10,7 +10,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.approvals.models import ApprovalRequest
-from app.approvals.service import ApprovalService, ApprovalServiceResponse
+from app.approvals.service import (
+    REVIEWER_NOT_AUTHORIZED_STATUS,
+    ApprovalService,
+    ApprovalServiceResponse,
+)
 from app.auth.security import OperatorPrincipal, require_approver
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
@@ -105,11 +109,15 @@ def approve_payment_request(
     payment_service: Annotated[PaymentService, Depends(get_payment_service)],
     principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalExecutionResponse | JSONResponse:
-    """Approve and execute an approval request."""
+    """Approve and execute an approval request.
+
+    The reviewer is always the server-authenticated principal. No request body or
+    header other than the verified credential influences the reviewer identity.
+    """
 
     response = payment_service.execute_approved_payment(
         approval_id,
-        operator_id=principal.operator_id,
+        reviewer=principal,
     )
     logger.info(
         "Approval approve endpoint completed.",
@@ -121,6 +129,8 @@ def approve_payment_request(
     )
     if response.status == "not_found":
         return _response_with_status(response, status.HTTP_404_NOT_FOUND)
+    if response.status == REVIEWER_NOT_AUTHORIZED_STATUS:
+        return _response_with_status(response, status.HTTP_403_FORBIDDEN)
 
     return response
 
@@ -129,11 +139,11 @@ def approve_payment_request(
 def reject_payment_request(
     approval_id: str,
     approval_service: Annotated[ApprovalService, Depends(get_approval_service)],
-    _principal: Annotated[OperatorPrincipal, Depends(require_approver)],
+    principal: Annotated[OperatorPrincipal, Depends(require_approver)],
 ) -> ApprovalServiceResponse | JSONResponse:
-    """Reject an approval request."""
+    """Reject a pending approval request as the server-authenticated principal."""
 
-    response = approval_service.reject_request(approval_id)
+    response = approval_service.reject_request(approval_id, reviewer=principal)
     logger.info(
         "Approval reject endpoint completed.",
         extra={
@@ -144,6 +154,8 @@ def reject_payment_request(
     )
     if response.status == "not_found":
         return _response_with_status(response, status.HTTP_404_NOT_FOUND)
+    if response.status == REVIEWER_NOT_AUTHORIZED_STATUS:
+        return _response_with_status(response, status.HTTP_403_FORBIDDEN)
 
     return response
 

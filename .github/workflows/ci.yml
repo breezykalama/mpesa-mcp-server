@@ -12,14 +12,19 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # gitleaks-action scans the commit range (<first>^..<last>) of each push and
+          # pull request, so the full history must be present for git to resolve it.
+          fetch-depth: 0
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
+        # gitleaks-action v2 accepts no `with:` inputs; it is configured through env.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
-        with:
-          args: detect --no-git --source . --config .gitleaks.toml --verbose
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_VERSION: 8.24.3
 
   test:
     name: Test
@@ -69,7 +74,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          # Pinned to Node 24 LTS. Node 26 defines a global localStorage getter that
+          # returns undefined without --localstorage-file, shadowing jsdom in Vitest.
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 

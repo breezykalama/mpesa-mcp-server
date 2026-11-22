@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
 from app.auth.oidc import DevelopmentOIDCIdentityProvider, OperatorIdentity
 from app.auth.security import TokenIdentityProvider
 from app.bootstrap.container import AppContainer
 from app.config import Settings
+from pydantic import ValidationError
 
 
 def test_operator_identity_exposes_backwards_compatible_principal_fields() -> None:
@@ -14,10 +16,13 @@ def test_operator_identity_exposes_backwards_compatible_principal_fields() -> No
         email="operator@example.test",
         display_name="Operator Example",
         roles=["viewer", "approver"],
+        authentication_method="oidc_jwks",
+        principal_type="human",
     )
 
     assert identity.operator_id == "operator-123"
     assert identity.role == "approver"
+    assert identity.is_verified_human is True
 
 
 def test_development_oidc_provider_returns_configured_identity() -> None:
@@ -75,3 +80,43 @@ def test_token_identity_provider_preserves_static_token_mapping() -> None:
     assert identity is not None
     assert identity.subject == "operator-viewer"
     assert identity.role == "viewer"
+
+
+def test_operator_identity_requires_authentication_method() -> None:
+    with pytest.raises(ValidationError):
+        OperatorIdentity(  # type: ignore[call-arg]
+            subject="operator-123",
+            display_name="Operator Example",
+            roles=["approver"],
+        )
+
+
+def test_development_oidc_identity_is_not_a_verified_human() -> None:
+    provider = DevelopmentOIDCIdentityProvider(
+        Settings(
+            operator_auth_enabled=False,
+            oidc_development_groups="finance_approvers",
+            oidc_approver_groups="finance_approvers",
+        )
+    )
+
+    identity = provider.authenticate("development-bearer-credential")
+
+    assert identity is not None
+    assert identity.authentication_method == "oidc_development"
+    assert identity.is_verified_human is False
+
+
+def test_static_token_identity_is_not_a_verified_human() -> None:
+    container = AppContainer.mock(
+        settings=Settings(
+            operator_auth_enabled=True,
+            operator_approver_token="approver-token",
+        )
+    )
+
+    identity = TokenIdentityProvider(container).authenticate("approver-token")
+
+    assert identity is not None
+    assert identity.authentication_method == "static_token"
+    assert identity.is_verified_human is False

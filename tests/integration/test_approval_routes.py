@@ -8,13 +8,17 @@ from app.config import Settings
 from app.main import app
 from fastapi.testclient import TestClient
 from httpx import Response
+from tests.identity_fixtures import verified_human
 
 
 def test_pending_approvals_list() -> None:
     container = build_approval_container()
     pending_approval_id = create_pending_approval(container)
     rejected_approval_id = create_pending_approval(container)
-    container.approval_service.reject_request(rejected_approval_id)
+    container.approval_service.reject_request(
+        rejected_approval_id,
+        reviewer=verified_human(),
+    )
 
     response = request_with_container(container, "GET", "/approvals/pending")
 

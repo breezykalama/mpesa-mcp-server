@@ -131,9 +131,9 @@ Business logic lives in services, handlers, policies, and generators. MCP and Fa
 | `generate_receipt` | Generate a receipt for a completed transaction | Generates structured receipt data only for completed transactions |
 | `get_today_summary` | Show today's revenue summary | Counts transactions from the configured repository and only includes completed transactions in revenue |
 | `get_failed_transactions` | Show failed transactions | Returns transactions with `failed` status from the configured repository |
-| `approve_payment_request` | Approve a pending risky payment request | Marks approval as approved and executes the original STK push once |
-| `reject_payment_request` | Reject a pending risky payment request | Marks approval as rejected without initiating Daraja |
 | `run_reconciliation` | Detect local/provider transaction mismatches | Read-only reconciliation summary with detailed findings |
+
+AI agents may request payments, but they never authorize them. There is no MCP tool that approves or rejects an approval request. `approve_payment_request` and `reject_payment_request` are permanently denied for agents: they are not registered on the MCP server, the tool policy blocks them unconditionally, and no `ENABLED_MCP_TOOLS` value can re-enable them. Approval decisions are made only by authenticated human operators through the operator approval API (see [Human Approval Authority](#human-approval-authority)).
 
 ## Safety Rules
 
@@ -163,7 +163,8 @@ Key safeguards include:
 - **Payment policy:** STK Push requests require amount and phone number validation, block invalid amounts, and route above-limit payments into approval.
 - **Approval workflow:** risky STK Push requests create approval records and are not sent to Daraja until explicitly approved.
 - **Approval expiry:** pending approvals expire after `APPROVAL_EXPIRY_MINUTES` and cannot be approved or executed after expiry.
-- **Multi-reviewer approval:** high-risk approvals can require multiple distinct operator reviews before payment execution.
+- **Multi-reviewer approval:** high-risk approvals require multiple distinct, IdP-verified human reviewers before payment execution. Shared static tokens and development identities cannot satisfy a multi-reviewer requirement.
+- **Human approval authority:** approve and reject decisions require a server-authenticated operator identity; MCP agents cannot approve or reject.
 - **Idempotency:** repeated STK Push requests with the same idempotency key return the existing transaction instead of initiating a duplicate.
 - **Transaction state machine:** pending transactions can move only into terminal states, and terminal states cannot be overwritten by duplicate or late callbacks.
 - **Database integrity:** PostgreSQL models and migrations enforce critical transaction uniqueness and allowed status values.
@@ -200,6 +201,28 @@ Protected endpoints:
 - `POST /approvals/{approval_id}/approve` requires `approver+`
 - `POST /approvals/{approval_id}/reject` requires `approver+`
 - `POST /approvals/expire-stale` requires `approver+`
+
+### Human Approval Authority
+
+The reviewer of every approve or reject decision is the server-authenticated principal. Request bodies cannot supply or change the reviewer identity, and there is no default or synthetic reviewer.
+
+Reviewer eligibility depends on how the operator authenticated:
+
+| Authentication | Outside development (`APP_ENV` not development-like, or `DARAJA_MODE=production`) | Development (`APP_ENV` in `development`, `dev`, `local`, `test` and Daraja not in production mode) |
+| --- | --- | --- |
+| OIDC JWKS, delegated user token (`scp` claim) | Approve and reject; counts toward multi-reviewer quorum | Same |
+| OIDC JWKS, app-only token (`idtyp=app`) or no delegation evidence | Denied (`403 reviewer_not_authorized`) | Denied |
+| Static bearer token | Denied | Single-reviewer approvals only |
+| Development OIDC provider | Denied | Single-reviewer approvals only |
+| `OPERATOR_AUTH_ENABLED=false` local principal | Denied | Single-reviewer approvals only |
+
+Other rules:
+
+- Rejection is only possible from `pending`. Approved, rejected, and expired approvals return `blocked` and keep their state.
+- Repeated or duplicate decisions are deterministic and never trigger additional payment actions.
+- Reviewer eligibility is checked before any approval state handling. An ineligible principal always gets `403 reviewer_not_authorized`, receives no approval details, and cannot expire or otherwise change an approval, whether it is pending, expired, or terminal. Denied attempts are audited as `approval_decision_denied`.
+- Approval decisions, expiry, and approved-payment execution share one process-local lock. **The lock is held across the payment-provider call**, so a slow provider can temporarily block approval listing (`GET /approvals/pending`, which runs expiry) and `POST /approvals/expire-stale` in the same process. The lock is **not** a cross-process or cross-worker concurrency guarantee: approvals are not yet safe with multiple processes or workers. Removing the lock depends on durable, transactional approval and execution controls; see the production readiness checklist.
+- Decision audit events record `operator_subject`, `operator_email`, `operator_display_name`, and `operator_roles` with actor `authenticated_operator`. Agent-originated requests are recorded with actor `mcp_agent`. Credentials and raw tokens are never recorded.
 
 Configure local tokens with:
 
