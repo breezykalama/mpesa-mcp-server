@@ -15,18 +15,22 @@ CURRENT_MCP_TOOLS = frozenset(
         "generate_receipt",
         "get_today_summary",
         "get_failed_transactions",
-        "approve_payment_request",
-        "reject_payment_request",
         "run_reconciliation",
     }
 )
 
-APPROVAL_FLOW_TOOLS = frozenset(
+AGENT_FORBIDDEN_TOOLS = frozenset(
     {
         "approve_payment_request",
         "reject_payment_request",
     }
 )
+"""Approval decision capabilities that AI agents must never hold.
+
+AI agents may request payments, but must never authorize (or decide) financial
+actions. These names are denied unconditionally: enabling them through
+``ENABLED_MCP_TOOLS`` or any other configuration has no effect.
+"""
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,7 @@ class ToolPolicyEngine:
         blocked_tools: set[str] | None = None,
         approval_required_tools: set[str] | None = None,
     ) -> None:
-        self._enabled_tools = enabled_tools or set(CURRENT_MCP_TOOLS)
+        self._enabled_tools = (enabled_tools or set(CURRENT_MCP_TOOLS)) - AGENT_FORBIDDEN_TOOLS
         self._blocked_tools = blocked_tools or set()
         self._approval_required_tools = approval_required_tools or set()
 
@@ -67,6 +71,13 @@ class ToolPolicyEngine:
     def evaluate(self, tool_name: str) -> ToolPolicyDecision:
         """Evaluate whether a tool can execute."""
 
+        if tool_name in AGENT_FORBIDDEN_TOOLS:
+            return ToolPolicyDecision(
+                status="blocked",
+                allowed=False,
+                reason="Approval decisions are restricted to authenticated human operators",
+            )
+
         if tool_name in self._blocked_tools or tool_name not in self._enabled_tools:
             return ToolPolicyDecision(
                 status="blocked",
@@ -74,10 +85,7 @@ class ToolPolicyEngine:
                 reason="Tool disabled by policy",
             )
 
-        if (
-            tool_name in self._approval_required_tools
-            and tool_name not in APPROVAL_FLOW_TOOLS
-        ):
+        if tool_name in self._approval_required_tools:
             return ToolPolicyDecision(
                 status="approval_required",
                 allowed=False,

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from app.approvals.models import ApprovalRequest
 from app.approvals.service import ApprovalService
 from app.audit.logger import AuditLoggerProtocol
+from app.auth.oidc import OperatorIdentity
 from app.observability.metrics import MetricsRecorder
 from app.payments.providers import PaymentInitiationResponse, PaymentProviderProtocol
 from app.safety.policy import PaymentActionRequest, PaymentPolicy
@@ -73,8 +74,13 @@ class PaymentService:
         account_reference: str,
         description: str,
         idempotency_key: str | None = None,
+        request_origin: str = "unspecified",
     ) -> PaymentResponse:
-        """Initiate an STK push using injected dependencies."""
+        """Initiate an STK push using injected dependencies.
+
+        ``request_origin`` identifies the requester (for example ``mcp_agent``) in the
+        approval audit trail. It never confers approval authority.
+        """
 
         policy_decision = self._policy.evaluate(
             PaymentActionRequest(
@@ -112,6 +118,7 @@ class PaymentService:
                     "idempotency_key": resolved_idempotency_key,
                 },
                 reason=policy_decision.reason,
+                request_origin=request_origin,
             )
             logger.info(
                 "Payment requires approval.",
@@ -175,9 +182,40 @@ class PaymentService:
     def execute_approved_payment(
         self,
         approval_id: str,
-        operator_id: str = "system_operator",
+        *,
+        reviewer: OperatorIdentity,
     ) -> ApprovalExecutionResponse:
-        """Approve and execute a pending STK push approval request."""
+        """Record a human approval and execute the payment once quorum is reached.
+
+        ``reviewer`` must come from server-side operator authentication. There is no
+        default or synthetic reviewer. The approval decision and payment execution run
+        under the approval service's process-local decision lock so that concurrent
+        in-process approvals cannot both reach the provider. This does not protect
+        against concurrent execution across processes or workers.
+        """
+
+        with self._approval_service.decision_lock:
+            return self._execute_approved_payment_locked(approval_id, reviewer=reviewer)
+
+    def _execute_approved_payment_locked(
+        self,
+        approval_id: str,
+        *,
+        reviewer: OperatorIdentity,
+    ) -> ApprovalExecutionResponse:
+        # Authorize before any lookup-driven branching, expiry mutation, or execution so
+        # that ineligible principals cannot observe or change approval state.
+        denial = self._approval_service.authorize_decision(
+            approval_id,
+            reviewer=reviewer,
+            decision="approve",
+        )
+        if denial is not None:
+            return ApprovalExecutionResponse(
+                status=denial.status,
+                allowed=False,
+                reason=denial.reason,
+            )
 
         approval = self._approval_service.get_approval_request(approval_id)
         if approval is None:
@@ -232,17 +270,11 @@ class PaymentService:
 
         approval_response = self._approval_service.approve_request(
             approval_id,
-            operator_id=operator_id,
+            reviewer=reviewer,
         )
         approved_approval = approval_response.approval
-        if approved_approval is None:
-            return ApprovalExecutionResponse(
-                status="not_found",
-                allowed=False,
-                reason="Approval request was not found.",
-            )
 
-        if approval_response.status != "approved":
+        if approval_response.status != "approved" or approved_approval is None:
             logger.info(
                 "Approval execution deferred.",
                 extra={

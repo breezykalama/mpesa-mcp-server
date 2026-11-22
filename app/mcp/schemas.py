@@ -53,18 +53,6 @@ class GetFailedTransactionsInput(BaseModel):
     """Input schema for the get_failed_transactions MCP tool."""
 
 
-class ApprovePaymentRequestInput(BaseModel):
-    """Input schema for the approve_payment_request MCP tool."""
-
-    approval_id: str
-
-
-class RejectPaymentRequestInput(BaseModel):
-    """Input schema for the reject_payment_request MCP tool."""
-
-    approval_id: str
-
-
 class RunReconciliationInput(BaseModel):
     """Input schema for the run_reconciliation MCP tool."""
 

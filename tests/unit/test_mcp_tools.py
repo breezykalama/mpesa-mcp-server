@@ -27,6 +27,7 @@ class RecordingPaymentService:
         self.account_reference: str | None = None
         self.description: str | None = None
         self.idempotency_key: str | None = None
+        self.request_origin: str | None = None
 
     def initiate_stk_push(
         self,
@@ -36,8 +37,10 @@ class RecordingPaymentService:
         account_reference: str,
         description: str,
         idempotency_key: str | None = None,
+        request_origin: str = "unspecified",
     ) -> PaymentResponse:
         self.called = True
+        self.request_origin = request_origin
         self.phone_number = phone_number
         self.amount = amount
         self.account_reference = account_reference

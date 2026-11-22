@@ -10,10 +10,8 @@ from typing import Any, ParamSpec, Protocol, TypeVar
 from pydantic import ValidationError
 
 from app.analytics.service import DailyAnalyticsSummary
-from app.approvals.service import ApprovalServiceResponse
 from app.infrastructure.health import InfrastructureUnavailableError
 from app.mcp.schemas import (
-    ApprovePaymentRequestInput,
     CheckPaymentStatusInput,
     CheckTransactionStatusInput,
     GenerateReceiptInput,
@@ -22,19 +20,25 @@ from app.mcp.schemas import (
     InitiatePaymentInput,
     InitiateStkPushInput,
     McpToolResponse,
-    RejectPaymentRequestInput,
     RunReconciliationInput,
 )
 from app.observability.tracing import correlation_context
 from app.policy.tool_policy import ToolPolicyEngine
 from app.rate_limit.limiter import RateLimiterProtocol
 from app.reconciliation.service import ReconciliationSummary
-from app.services.payment_service import ApprovalExecutionResponse, PaymentResponse
+from app.services.payment_service import PaymentResponse
 from app.services.receipt_service import ReceiptServiceResponse
 from app.services.transaction_service import TransactionStatusServiceResponse
 from app.storage.repositories import PendingTransaction
 
 logger = logging.getLogger(__name__)
+
+MCP_AGENT_REQUEST_ORIGIN = "mcp_agent"
+"""Request origin recorded for payment requests made by an MCP agent.
+
+AI agents may request payments, but approval decisions are human-only. This module
+intentionally exposes no tool that approves or rejects approval requests.
+"""
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -61,6 +65,7 @@ class InitiateStkPushServiceProtocol(Protocol):
         account_reference: str,
         description: str,
         idempotency_key: str | None = None,
+        request_origin: str = "unspecified",
     ) -> PaymentResponse:
         """Initiate an STK push payment."""
 
@@ -90,26 +95,6 @@ class AnalyticsServiceProtocol(Protocol):
 
     def get_failed_transactions(self) -> list[PendingTransaction]:
         """Return failed transactions."""
-
-
-class ApprovalExecutionServiceProtocol(Protocol):
-    """Service contract required by approval execution MCP tools."""
-
-    def execute_approved_payment(
-        self,
-        approval_id: str,
-        operator_id: str = "system_operator",
-    ) -> ApprovalExecutionResponse:
-        """Approve and execute a payment request."""
-
-
-class ApprovalRejectionServiceProtocol(Protocol):
-    """Service contract required by approval rejection MCP tools."""
-
-    def reject_request(self, approval_id: str) -> ApprovalServiceResponse:
-        """Reject an approval request."""
-
-
 class ReconciliationServiceProtocol(Protocol):
     """Service contract required by reconciliation MCP tools."""
 
@@ -167,6 +152,7 @@ def initiate_stk_push_tool(
         account_reference=tool_input.account_reference,
         description=tool_input.description,
         idempotency_key=tool_input.idempotency_key,
+        request_origin=MCP_AGENT_REQUEST_ORIGIN,
     )
 
     return McpToolResponse(
@@ -227,6 +213,7 @@ def initiate_payment_tool(
         account_reference=tool_input.account_reference,
         description=tool_input.description,
         idempotency_key=tool_input.idempotency_key,
+        request_origin=MCP_AGENT_REQUEST_ORIGIN,
     )
 
     return McpToolResponse(
@@ -474,105 +461,6 @@ def get_failed_transactions_tool(
 
 
 @with_correlation_context
-def approve_payment_request_tool(
-    input_data: ApprovePaymentRequestInput | dict[str, Any],
-    payment_service: ApprovalExecutionServiceProtocol,
-    *,
-    rate_limiter: RateLimiterProtocol | None = None,
-    rate_limit_enabled: bool = False,
-    rate_limit_window_seconds: int = 60,
-    rate_limit_max_requests: int = 10,
-    tool_policy: ToolPolicyEngine | None = None,
-) -> McpToolResponse:
-    """Validate MCP input and delegate approval execution to the payment service."""
-
-    policy_response = _check_tool_policy("approve_payment_request", tool_policy)
-    if policy_response is not None:
-        return policy_response
-
-    try:
-        tool_input = _validate_approve_payment_request_input(input_data)
-    except ValidationError as exc:
-        _log_tool_event("approve_payment_request", "mcp_tool_invalid_input")
-        return McpToolResponse(
-            status="invalid_input",
-            allowed=False,
-            reason="Invalid approve_payment_request input.",
-            errors=[error["msg"] for error in exc.errors()],
-        )
-
-    rate_limit_response = _check_rate_limit(
-        rate_limiter=rate_limiter,
-        enabled=rate_limit_enabled,
-        key=f"approve_payment_request:{tool_input.approval_id}",
-        limit=rate_limit_max_requests,
-        window_seconds=rate_limit_window_seconds,
-    )
-    if rate_limit_response is not None:
-        _log_tool_event(
-            "approve_payment_request",
-            "mcp_tool_rate_limited",
-            status="rate_limited",
-        )
-        return rate_limit_response
-
-    _log_tool_event("approve_payment_request", "mcp_tool_delegated")
-    execution_response = payment_service.execute_approved_payment(
-        tool_input.approval_id,
-        operator_id="mcp_operator",
-    )
-    return _approval_execution_response_to_mcp_response(execution_response)
-
-
-@with_correlation_context
-def reject_payment_request_tool(
-    input_data: RejectPaymentRequestInput | dict[str, Any],
-    approval_service: ApprovalRejectionServiceProtocol,
-    *,
-    rate_limiter: RateLimiterProtocol | None = None,
-    rate_limit_enabled: bool = False,
-    rate_limit_window_seconds: int = 60,
-    rate_limit_max_requests: int = 10,
-    tool_policy: ToolPolicyEngine | None = None,
-) -> McpToolResponse:
-    """Validate MCP input and delegate rejection to the approval service."""
-
-    policy_response = _check_tool_policy("reject_payment_request", tool_policy)
-    if policy_response is not None:
-        return policy_response
-
-    try:
-        tool_input = _validate_reject_payment_request_input(input_data)
-    except ValidationError as exc:
-        _log_tool_event("reject_payment_request", "mcp_tool_invalid_input")
-        return McpToolResponse(
-            status="invalid_input",
-            allowed=False,
-            reason="Invalid reject_payment_request input.",
-            errors=[error["msg"] for error in exc.errors()],
-        )
-
-    rate_limit_response = _check_rate_limit(
-        rate_limiter=rate_limiter,
-        enabled=rate_limit_enabled,
-        key=f"reject_payment_request:{tool_input.approval_id}",
-        limit=rate_limit_max_requests,
-        window_seconds=rate_limit_window_seconds,
-    )
-    if rate_limit_response is not None:
-        _log_tool_event(
-            "reject_payment_request",
-            "mcp_tool_rate_limited",
-            status="rate_limited",
-        )
-        return rate_limit_response
-
-    _log_tool_event("reject_payment_request", "mcp_tool_delegated")
-    approval_response = approval_service.reject_request(tool_input.approval_id)
-    return _approval_response_to_mcp_response(approval_response)
-
-
-@with_correlation_context
 def run_reconciliation_tool(
     input_data: RunReconciliationInput | dict[str, Any],
     reconciliation_service: ReconciliationServiceProtocol,
@@ -667,24 +555,6 @@ def _validate_failed_transactions_input(
     return GetFailedTransactionsInput.model_validate(input_data)
 
 
-def _validate_approve_payment_request_input(
-    input_data: ApprovePaymentRequestInput | dict[str, Any],
-) -> ApprovePaymentRequestInput:
-    if isinstance(input_data, ApprovePaymentRequestInput):
-        return input_data
-
-    return ApprovePaymentRequestInput.model_validate(input_data)
-
-
-def _validate_reject_payment_request_input(
-    input_data: RejectPaymentRequestInput | dict[str, Any],
-) -> RejectPaymentRequestInput:
-    if isinstance(input_data, RejectPaymentRequestInput):
-        return input_data
-
-    return RejectPaymentRequestInput.model_validate(input_data)
-
-
 def _validate_run_reconciliation_input(
     input_data: RunReconciliationInput | dict[str, Any],
 ) -> RunReconciliationInput:
@@ -692,34 +562,6 @@ def _validate_run_reconciliation_input(
         return input_data
 
     return RunReconciliationInput.model_validate(input_data)
-
-
-def _approval_response_to_mcp_response(response: ApprovalServiceResponse) -> McpToolResponse:
-    return McpToolResponse(
-        status=response.status,
-        allowed=response.allowed,
-        reason=response.reason,
-        data=response.model_dump(
-            mode="json",
-            exclude={"status", "allowed", "reason"},
-            exclude_none=True,
-        ),
-    )
-
-
-def _approval_execution_response_to_mcp_response(
-    response: ApprovalExecutionResponse,
-) -> McpToolResponse:
-    return McpToolResponse(
-        status=response.status,
-        allowed=response.allowed,
-        reason=response.reason,
-        data=response.model_dump(
-            mode="json",
-            exclude={"status", "allowed", "reason"},
-            exclude_none=True,
-        ),
-    )
 
 
 def _check_rate_limit(

@@ -22,15 +22,36 @@ ROLE_LEVELS: dict[OperatorRole, int] = {
 SUPPORTED_JWT_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]
 logger = logging.getLogger(__name__)
 
+AuthenticationMethod = Literal[
+    "oidc_jwks",
+    "oidc_development",
+    "static_token",
+    "auth_disabled",
+]
+"""How the server authenticated an operator credential.
+
+Only ``oidc_jwks`` represents a cryptographically verified identity-provider token.
+The other methods are shared, configured, or synthetic identities.
+"""
+
+PrincipalType = Literal["human", "application", "unknown"]
+"""Whether the authenticated principal is a delegated human user or an application."""
+
 
 class OperatorIdentity(BaseModel):
-    """Normalized operator identity returned by every authentication mode."""
+    """Normalized operator identity returned by every authentication mode.
+
+    Instances must only be created by server-side identity providers. Request bodies
+    must never be used to populate an identity.
+    """
 
     subject: str
     email: str | None = None
     display_name: str
     roles: list[OperatorRole] = Field(min_length=1)
     groups: list[str] = Field(default_factory=list)
+    authentication_method: AuthenticationMethod
+    principal_type: PrincipalType = "unknown"
 
     @property
     def operator_id(self) -> str:
@@ -43,6 +64,21 @@ class OperatorIdentity(BaseModel):
         """Return the highest role for backwards-compatible RBAC checks."""
 
         return max(self.roles, key=ROLE_LEVELS.__getitem__)
+
+    @property
+    def is_verified_human(self) -> bool:
+        """Return whether this is an IdP-verified, delegated human user identity.
+
+        Static tokens, development identities, and disabled-auth principals are shared
+        or synthetic and cannot prove that a distinct human made a decision.
+        """
+
+        return self.authentication_method == "oidc_jwks" and self.principal_type == "human"
+
+    def has_role(self, minimum_role: OperatorRole) -> bool:
+        """Return whether the identity holds at least the given role."""
+
+        return ROLE_LEVELS[self.role] >= ROLE_LEVELS[minimum_role]
 
 
 class OperatorIdentityProviderProtocol(Protocol):
@@ -72,6 +108,8 @@ class DevelopmentOIDCIdentityProvider:
                 display_name=settings.oidc_development_display_name,
                 roles=mapped_roles,
                 groups=groups,
+                authentication_method="oidc_development",
+                principal_type="unknown",
             )
 
     def authenticate(self, credential: str | None) -> OperatorIdentity | None:
@@ -140,6 +178,8 @@ class JWKSOIDCIdentityProvider:
                 display_name=display_name,
                 roles=mapped_roles,
                 groups=groups,
+                authentication_method="oidc_jwks",
+                principal_type=_principal_type_from_claims(claims),
             )
         except Exception:
             logger.warning(
@@ -231,6 +271,25 @@ class JWKSOIDCIdentityProvider:
         groups = _claim_as_list(claims.get(self._settings.oidc_groups_claim))
         roles = _claim_as_list(claims.get(self._settings.oidc_roles_claim))
         return list(dict.fromkeys([*groups, *roles]))
+
+
+def _principal_type_from_claims(claims: dict[str, object]) -> PrincipalType:
+    """Classify a verified token as a delegated human or an application principal.
+
+    Microsoft Entra ID marks app-only tokens with ``idtyp=app`` (optional claim) and
+    issues delegated user tokens with an ``scp`` scope claim. App-only tokens never
+    carry ``scp``. Anything that cannot be positively identified as a delegated user
+    is ``unknown`` and therefore never counts as a verified human reviewer.
+    """
+
+    token_type = _claim_as_string(claims.get("idtyp"))
+    if token_type == "app":
+        return "application"
+
+    if _claim_as_string(claims.get("scp")) is not None:
+        return "human"
+
+    return "unknown"
 
 
 def _claim_as_list(value: object) -> list[str]:

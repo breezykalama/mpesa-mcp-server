@@ -31,6 +31,23 @@ Outside development-like environments, `CALLBACK_SHARED_SECRET` must be configur
 
 Redis-backed modes require a valid `REDIS_URL`, and Postgres storage requires a PostgreSQL `DATABASE_URL`.
 
+## Approval Authority
+
+AI agents may request payments, but they must never authorize financial actions.
+
+- No MCP tool approves or rejects approval requests. `approve_payment_request` and `reject_payment_request` are listed in `AGENT_FORBIDDEN_TOOLS` and are denied unconditionally; configuration cannot re-enable them, and the MCP server refuses to register them.
+- Approve and reject decisions are only available through the operator approval API, and the reviewer is always the server-authenticated `OperatorIdentity`. Request bodies cannot supply reviewer identity, and there is no fallback or synthetic reviewer.
+- Every identity records its `authentication_method` (`oidc_jwks`, `oidc_development`, `static_token`, `auth_disabled`) and `principal_type` (`human`, `application`, `unknown`). Only `oidc_jwks` with a delegated user token (`scp` claim, not `idtyp=app`) counts as a verified human.
+- Outside development environments, only verified humans may approve or reject. App-only identities are always denied. Multi-reviewer quorums count only verified humans in every environment, because shared tokens and development identities cannot prove distinct reviewers.
+- Rejection is only possible from `pending`.
+- Decision and denied-attempt audit events record the reviewer's subject, email, display name, and roles. Raw tokens, credentials, and raw identity-provider claims are never recorded.
+
+Known limitations, tracked in the production readiness checklist:
+
+- Approvals are stored in memory per process. MCP-originated approvals cannot be completed by human operators in the separate API process; this is intentionally left blocked.
+- Approval decisions, expiry, and approved-payment execution are serialized with one process-local lock. The lock is held for the duration of the payment-provider call, so a slow provider can temporarily block approval listing and expiry in the same process. It does not coordinate across processes or workers: running multiple API workers or processes is not safe for approvals. The lock can only be removed once durable, transactional approval state and execution claims exist.
+- Reviewer eligibility is evaluated before any approval state handling. Ineligible principals receive `403 reviewer_not_authorized`, see no approval details, and cannot trigger expiry or any other state change.
+
 ## Callback Source Verification
 
 The app does not claim to cryptographically verify Safaricom callbacks directly.

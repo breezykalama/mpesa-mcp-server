@@ -15,6 +15,10 @@ Every authentication mode resolves credentials into:
 - `display_name`: human-readable operator name.
 - `groups`: optional external identity-provider groups.
 - `roles`: one or more of `viewer`, `approver`, and `admin`.
+- `authentication_method`: `oidc_jwks`, `oidc_development`, `static_token`, or `auth_disabled`. Set only by the server-side identity provider.
+- `principal_type`: `human`, `application`, or `unknown`. For JWKS tokens, `idtyp=app` means `application`, and a delegated `scp` claim means `human`. Anything else is `unknown`.
+
+Only `oidc_jwks` identities with `principal_type=human` are verified humans. Approval decisions outside development environments, and every multi-reviewer quorum, require verified humans. See [Approval Authority](security-model.md#approval-authority).
 
 Existing workflows continue to use the identity subject as `operator_id`. The highest assigned role is used for backwards-compatible RBAC checks.
 

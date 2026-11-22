@@ -247,7 +247,7 @@ The legacy flow still demonstrates:
 - `generate_receipt`
 - `get_today_summary`
 - above-limit `initiate_stk_push` returning `approval_required`
-- `approve_payment_request` executing the approved payment once
+- an agent attempt to approve the request being blocked; the approval stays `pending` for a human operator
 - `run_reconciliation`
 
 No Docker, Redis, PostgreSQL, Daraja credentials, or live network calls are required.
@@ -328,9 +328,9 @@ What this demonstrates:
 - Daraja client protocol
 - audit event for status checks
 
-### approve_payment_request
+### Approval required (human decision)
 
-If an STK Push amount exceeds the configured maximum, the payment is not sent immediately.
+If an STK Push amount exceeds the configured maximum, the payment is not sent immediately. The agent receives an `approval_id`, but it cannot approve or reject the request: no MCP tool exposes approval decisions. A human operator must approve or reject it through `POST /approvals/{approval_id}/approve` or `POST /approvals/{approval_id}/reject`, authenticated as an operator with the `approver` role.
 
 High-value input:
 
@@ -677,7 +677,9 @@ Payments above `MAX_STK_AMOUNT` are converted into approval requests. They are n
 
 Pending approvals expire after `APPROVAL_EXPIRY_MINUTES`. Expired approvals move to `expired`, disappear from the pending approvals list, and cannot execute payments.
 
-High-risk approvals can require multiple distinct operator reviews. By default, requests at or above `HIGH_RISK_AMOUNT_THRESHOLD` require `HIGH_RISK_APPROVAL_REQUIRED_REVIEWERS`; the same operator cannot approve the same request twice.
+High-risk approvals can require multiple distinct operator reviews. By default, requests at or above `HIGH_RISK_AMOUNT_THRESHOLD` require `HIGH_RISK_APPROVAL_REQUIRED_REVIEWERS`; the same operator cannot approve the same request twice, and only IdP-verified human identities count toward the quorum. Static tokens and development identities cannot complete a multi-reviewer approval, even locally.
+
+Known limitation: approvals are stored in memory per process. An approval created by the MCP server process is not visible to the separate FastAPI operator API process, so agent-originated approvals cannot currently be completed by a human and will expire. This is intentionally left blocked until durable, atomic approval persistence is implemented.
 
 ### Idempotency
 
@@ -689,8 +691,6 @@ Sensitive MCP tools are rate-limited:
 
 - `initiate_stk_push`
 - `check_transaction_status`
-- `approve_payment_request`
-- `reject_payment_request`
 
 When exceeded, the tool returns:
 

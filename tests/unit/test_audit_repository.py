@@ -120,6 +120,8 @@ def test_audit_event_stores_operator_identity_fields() -> None:
         email="operator@example.test",
         display_name="Example Operator",
         roles=["approver"],
+        authentication_method="oidc_jwks",
+        principal_type="human",
     )
 
     logger.log_event(

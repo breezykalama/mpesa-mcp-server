@@ -23,7 +23,9 @@ def test_smoke_mcp_tools_main_completes(capsys: pytest.CaptureFixture[str]) -> N
     assert legacy_flow["generate_receipt"]["allowed"] is True
     assert legacy_flow["get_today_summary"]["allowed"] is True
     assert legacy_flow["approval_required"]["status"] == "approval_required"
-    assert legacy_flow["approve_payment_request"]["status"] == "approved"
+    assert legacy_flow["agent_approval_attempt"]["status"] == "blocked"
+    assert legacy_flow["agent_approval_attempt"]["allowed"] is False
+    assert legacy_flow["agent_approval_attempt"]["approval_status"] == "pending"
     assert legacy_flow["run_reconciliation"]["status"] == "ok"
     assert daraja_flow["provider_metadata"]["provider"] == "daraja"
     assert daraja_flow["provider_metadata"]["rail"] == "mpesa"

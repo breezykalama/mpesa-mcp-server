@@ -65,14 +65,19 @@ def test_approval_required_tool_returns_approval_required() -> None:
     assert decision.reason == "Tool requires approval by policy"
 
 
-def test_approval_flow_tools_are_not_forced_into_approval_required() -> None:
+def test_approval_decision_tools_are_always_blocked_for_agents() -> None:
     engine = ToolPolicyEngine.from_settings(
         Settings(
             database_url="sqlite://",
+            enabled_mcp_tools="approve_payment_request,reject_payment_request",
             approval_required_mcp_tools="approve_payment_request",
         )
     )
 
-    decision = engine.evaluate("approve_payment_request")
-
-    assert decision.allowed is True
+    for tool_name in ("approve_payment_request", "reject_payment_request"):
+        decision = engine.evaluate(tool_name)
+        assert decision.allowed is False
+        assert decision.status == "blocked"
+        assert decision.reason == (
+            "Approval decisions are restricted to authenticated human operators"
+        )

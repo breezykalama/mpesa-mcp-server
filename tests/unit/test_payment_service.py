@@ -16,6 +16,9 @@ from app.payments.providers import AirtelMoneyMockProvider, DarajaPaymentProvide
 from app.safety.policy import PaymentPolicy
 from app.services.payment_service import PaymentService
 from app.storage.repositories import InMemoryTransactionRepository
+from tests.identity_fixtures import verified_human
+
+REVIEWER = verified_human()
 
 
 class FailingDarajaClient:
@@ -469,7 +472,10 @@ def test_approving_pending_request_executes_stk_push() -> None:
     )
 
     assert approval_response.approval_id is not None
-    execution_response = service.execute_approved_payment(approval_response.approval_id)
+    execution_response = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert execution_response.status == "approved"
     assert execution_response.payment is not None
@@ -494,7 +500,10 @@ def test_approval_execution_uses_original_payload() -> None:
     )
 
     assert approval_response.approval_id is not None
-    execution_response = service.execute_approved_payment(approval_response.approval_id)
+    execution_response = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert execution_response.payment is not None
     assert execution_response.payment.status == "pending"
@@ -521,8 +530,14 @@ def test_duplicate_approval_does_not_execute_twice() -> None:
     )
 
     assert approval_response.approval_id is not None
-    first_execution = service.execute_approved_payment(approval_response.approval_id)
-    second_execution = service.execute_approved_payment(approval_response.approval_id)
+    first_execution = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
+    second_execution = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert first_execution.payment is not None
     assert first_execution.payment.status == "pending"
@@ -545,8 +560,11 @@ def test_rejected_request_cannot_execute() -> None:
     )
 
     assert approval_response.approval_id is not None
-    approval_service.reject_request(approval_response.approval_id)
-    execution_response = service.execute_approved_payment(approval_response.approval_id)
+    approval_service.reject_request(approval_response.approval_id, reviewer=REVIEWER)
+    execution_response = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert execution_response.status == "blocked"
     assert execution_response.payment is None
@@ -566,7 +584,10 @@ def test_expired_approval_cannot_execute_payment() -> None:
     )
 
     assert approval_response.approval_id is not None
-    execution_response = service.execute_approved_payment(approval_response.approval_id)
+    execution_response = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert execution_response.status == "expired"
     assert execution_response.allowed is False
@@ -578,7 +599,7 @@ def test_expired_approval_cannot_execute_payment() -> None:
 def test_missing_approval_id_returns_not_found() -> None:
     service, _repository, _audit_logger, _approval_service = build_service_components()
 
-    execution_response = service.execute_approved_payment("missing")
+    execution_response = service.execute_approved_payment("missing", reviewer=REVIEWER)
 
     assert execution_response.status == "not_found"
     assert execution_response.allowed is False
@@ -598,7 +619,10 @@ def test_daraja_failure_after_approval_is_handled_cleanly() -> None:
     )
 
     assert approval_response.approval_id is not None
-    execution_response = service.execute_approved_payment(approval_response.approval_id)
+    execution_response = service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert execution_response.status == "approved"
     assert execution_response.allowed is False
@@ -634,8 +658,14 @@ def test_idempotency_prevents_duplicate_execution_for_approved_payload() -> None
     )
 
     assert first_approval.approval_id is not None
-    first_execution = service.execute_approved_payment(first_approval.approval_id)
-    second_execution = service.execute_approved_payment(second_approval.approval_id)
+    first_execution = service.execute_approved_payment(
+        first_approval.approval_id,
+        reviewer=REVIEWER,
+    )
+    second_execution = service.execute_approved_payment(
+        second_approval.approval_id,
+        reviewer=REVIEWER,
+    )
 
     assert first_execution.payment is not None
     assert second_execution.payment is not None
@@ -660,11 +690,11 @@ def test_high_risk_approval_executes_after_second_distinct_reviewer() -> None:
     assert approval_response.approval_id is not None
     first_execution = service.execute_approved_payment(
         approval_response.approval_id,
-        operator_id="operator-1",
+        reviewer=verified_human("operator-1"),
     )
     second_execution = service.execute_approved_payment(
         approval_response.approval_id,
-        operator_id="operator-2",
+        reviewer=verified_human("operator-2"),
     )
 
     assert first_execution.status == "partially_approved"
@@ -689,10 +719,13 @@ def test_same_reviewer_does_not_execute_high_risk_payment_twice() -> None:
     )
 
     assert approval_response.approval_id is not None
-    service.execute_approved_payment(approval_response.approval_id, operator_id="operator-1")
+    service.execute_approved_payment(
+        approval_response.approval_id,
+        reviewer=verified_human("operator-1"),
+    )
     duplicate_execution = service.execute_approved_payment(
         approval_response.approval_id,
-        operator_id="operator-1",
+        reviewer=verified_human("operator-1"),
     )
 
     assert duplicate_execution.status == "blocked"

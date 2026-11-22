@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from app.approvals.repository import InMemoryApprovalRepository
 from app.approvals.service import ApprovalService
+from tests.identity_fixtures import verified_human
+
+REVIEWER = verified_human("verified-approver-1")
 
 
 def build_service() -> ApprovalService:
@@ -33,7 +36,7 @@ def test_approval_can_be_approved() -> None:
         reason="Amount exceeds limit.",
     )
 
-    response = service.approve_request(approval.approval_id)
+    response = service.approve_request(approval.approval_id, reviewer=REVIEWER)
 
     assert response.status == "approved"
     assert response.allowed is True
@@ -41,7 +44,7 @@ def test_approval_can_be_approved() -> None:
     assert response.approval.status == "approved"
     assert response.approval.reviewed_at is not None
     assert response.approval.review_count == 1
-    assert response.approval.reviewer_ids == ["system_operator"]
+    assert response.approval.reviewer_ids == ["verified-approver-1"]
 
 
 def test_approval_created_with_expires_at() -> None:
@@ -64,7 +67,7 @@ def test_approval_can_be_rejected() -> None:
         reason="Amount exceeds limit.",
     )
 
-    response = service.reject_request(approval.approval_id)
+    response = service.reject_request(approval.approval_id, reviewer=REVIEWER)
 
     assert response.status == "rejected"
     assert response.allowed is False
@@ -81,7 +84,7 @@ def test_expired_approval_cannot_be_approved() -> None:
         reason="Amount exceeds limit.",
     )
 
-    response = service.approve_request(approval.approval_id)
+    response = service.approve_request(approval.approval_id, reviewer=REVIEWER)
 
     assert response.status == "expired"
     assert response.allowed is False
@@ -98,7 +101,7 @@ def test_expired_approval_cannot_be_rejected() -> None:
         reason="Amount exceeds limit.",
     )
 
-    response = service.reject_request(approval.approval_id)
+    response = service.reject_request(approval.approval_id, reviewer=REVIEWER)
 
     assert response.status == "expired"
     assert response.allowed is False
@@ -141,8 +144,14 @@ def test_high_risk_approval_requires_two_reviewers() -> None:
         reason="High risk amount.",
     )
 
-    first_response = service.approve_request(approval.approval_id, operator_id="operator-1")
-    second_response = service.approve_request(approval.approval_id, operator_id="operator-2")
+    first_response = service.approve_request(
+        approval.approval_id,
+        reviewer=verified_human("operator-1"),
+    )
+    second_response = service.approve_request(
+        approval.approval_id,
+        reviewer=verified_human("operator-2"),
+    )
 
     assert approval.required_reviewers == 2
     assert first_response.status == "partially_approved"
@@ -163,10 +172,10 @@ def test_same_reviewer_cannot_approve_twice() -> None:
         reason="High risk amount.",
     )
 
-    service.approve_request(approval.approval_id, operator_id="operator-1")
+    service.approve_request(approval.approval_id, reviewer=verified_human("operator-1"))
     duplicate_response = service.approve_request(
         approval.approval_id,
-        operator_id="operator-1",
+        reviewer=verified_human("operator-1"),
     )
 
     assert duplicate_response.status == "blocked"
