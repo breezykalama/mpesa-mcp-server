@@ -89,6 +89,7 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Count only IdP-verified human identities (OIDC JWKS delegated tokens) toward multi-reviewer quorums.
 - [x] **Done:** Deny app-only (`idtyp=app`) and non-delegated tokens as reviewers.
 - [x] **Done:** Deny static-token, development-OIDC, and auth-disabled reviewers outside development environments.
+- [x] **Done:** Deny unclassified (`unknown`) and app-only OIDC JWKS reviewers in every environment; restrict the development exception to development authentication methods.
 - [x] **Done:** Record the authenticated operator identity (subject, email, display name, roles) on approval decision and denied-attempt audit events; record agent requests with actor `mcp_agent`.
 - [ ] **Todo:** Add durable, atomic approval persistence shared by the MCP and API processes. Until then, approvals created by the MCP server process cannot be seen or completed by human operators and will expire (intentionally blocked).
 - [ ] **Todo:** Make approval execution concurrency-safe across processes and workers (atomic state transition before the provider call).

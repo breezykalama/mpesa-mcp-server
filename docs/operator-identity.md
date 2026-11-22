@@ -18,7 +18,7 @@ Every authentication mode resolves credentials into:
 - `authentication_method`: `oidc_jwks`, `oidc_development`, `static_token`, or `auth_disabled`. Set only by the server-side identity provider.
 - `principal_type`: `human`, `application`, or `unknown`. For JWKS tokens, `idtyp=app` means `application`, and a delegated `scp` claim means `human`. Anything else is `unknown`.
 
-Only `oidc_jwks` identities with `principal_type=human` are verified humans. Approval decisions outside development environments, and every multi-reviewer quorum, require verified humans. See [Approval Authority](security-model.md#approval-authority).
+Only `oidc_jwks` identities with `principal_type=human` are verified humans. Approval decisions outside development environments, and every multi-reviewer quorum, require verified humans. JWKS identities that are not verified humans (`unknown` or `application`) are denied approval authority in every environment; only the development authentication methods (`static_token`, `oidc_development`, `auth_disabled`) can use the development exception. See [Approval Authority](security-model.md#approval-authority).
 
 Existing workflows continue to use the identity subject as `operator_id`. The highest assigned role is used for backwards-compatible RBAC checks.
 

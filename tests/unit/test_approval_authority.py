@@ -637,3 +637,63 @@ def test_eligible_reviewer_on_missing_request_gets_not_found(decision: str) -> N
         response = approval_service.reject_request("missing", reviewer=verified_human())
 
     assert response.status == "not_found"
+
+
+# --- Development exception scope (Codex P2) ---------------------------------------
+def auth_disabled_identity() -> OperatorIdentity:
+    return OperatorIdentity(
+        subject="local-admin",
+        display_name="Local Administrator",
+        roles=["admin"],
+        authentication_method="auth_disabled",
+    )
+
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+@pytest.mark.parametrize(
+    "reviewer",
+    [
+        verified_human("jwks-unclassified").model_copy(update={"principal_type": "unknown"}),
+        application_principal(),
+    ],
+    ids=["jwks-unknown", "jwks-application"],
+)
+def test_jwks_principals_never_receive_development_exception(
+    reviewer: OperatorIdentity,
+    decision: str,
+) -> None:
+    approval_service, payment_service, audit_logger, daraja = build(
+        allow_development_reviewers=True
+    )
+    approval_id = request_payment(payment_service)
+    stored_before = approval_service.get_approval_request(approval_id)
+
+    response: ApprovalExecutionResponse | ApprovalServiceResponse
+    if decision == "approve":
+        response = payment_service.execute_approved_payment(approval_id, reviewer=reviewer)
+    else:
+        response = approval_service.reject_request(approval_id, reviewer=reviewer)
+
+    assert response.status == REVIEWER_NOT_AUTHORIZED_STATUS
+    assert approval_service.get_approval_request(approval_id) == stored_before
+    assert daraja.stk_push_calls == 0
+    [denied] = events_of(audit_logger, "approval_decision_denied")
+    assert denied.payload["authentication_method"] == "oidc_jwks"
+
+
+@pytest.mark.parametrize(
+    "reviewer",
+    [static_token_identity(), development_identity(), auth_disabled_identity()],
+    ids=["static-token", "development-oidc", "auth-disabled"],
+)
+def test_only_development_methods_receive_development_exception(
+    reviewer: OperatorIdentity,
+) -> None:
+    _approval_service, payment_service, _audit, daraja = build(allow_development_reviewers=True)
+    approval_id = request_payment(payment_service)
+
+    response = payment_service.execute_approved_payment(approval_id, reviewer=reviewer)
+
+    assert response.status == "approved"
+    assert daraja.stk_push_calls == 1

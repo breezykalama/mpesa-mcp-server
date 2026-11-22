@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from app.approvals.models import ApprovalRequest
 from app.approvals.repository import ApprovalRepositoryProtocol
 from app.audit.logger import AuditLoggerProtocol
-from app.auth.oidc import OperatorIdentity
+from app.auth.oidc import AuthenticationMethod, OperatorIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,15 @@ DECISION_ACTOR = "authenticated_operator"
 
 SYSTEM_ACTOR = "system"
 """Audit actor for system-driven lifecycle changes such as expiry."""
+
+DEVELOPMENT_AUTHENTICATION_METHODS: frozenset[AuthenticationMethod] = frozenset(
+    {"static_token", "oidc_development", "auth_disabled"}
+)
+"""Authentication methods eligible for the development-only single-reviewer exception.
+
+The exception additionally requires ``allows_development_approval_authority`` to be
+true, which is never the case when ``DARAJA_MODE=production``.
+"""
 
 MAX_AUDITED_APPROVAL_ID_LENGTH = 64
 """Caller-supplied approval IDs are truncated before logging or auditing."""
@@ -387,6 +396,16 @@ class ApprovalService:
 
         if reviewer.is_verified_human:
             return None
+
+        # The development exception is an allowlist of explicitly development-only
+        # authentication methods. Identity-provider (JWKS) principals that are not
+        # positively classified as delegated humans never receive it: a valid JWT alone
+        # does not prove a human made the decision.
+        if reviewer.authentication_method not in DEVELOPMENT_AUTHENTICATION_METHODS:
+            return (
+                "Identity-provider principals must be verified human operators to make "
+                "approval decisions."
+            )
 
         if not self._allow_development_reviewers:
             return "Approval decisions require a verified human operator identity."

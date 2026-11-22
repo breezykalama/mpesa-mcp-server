@@ -16,7 +16,9 @@ from app.auth.oidc import JWKSOIDCIdentityProvider
 from app.bootstrap.container import AppContainer
 from app.callbacks.routes import get_app_container
 from app.config import Settings
+from app.daraja.client import MockDarajaClient
 from app.main import app
+from app.payments.providers import DarajaPaymentProvider
 from fastapi.testclient import TestClient
 from tests.unit.test_oidc_jwks_provider import (
     AUDIENCE,
@@ -397,3 +399,233 @@ def test_ineligible_token_on_unknown_approval_gets_403_not_404(action: str) -> N
 
     assert response.status_code == 403
     assert response.json()["status"] == "reviewer_not_authorized"
+
+
+# --- Development exception scope (Codex P2) ---------------------------------------
+
+DARAJA_PRODUCTION_PLACEHOLDERS: dict[str, Any] = {
+    "daraja_mode": "production",
+    "daraja_production_consumer_key": "placeholder-key",
+    "daraja_production_consumer_secret": "placeholder-secret",
+    "daraja_production_passkey": "placeholder-passkey",
+    "daraja_production_shortcode": "000000",
+    "daraja_production_callback_url": "https://callbacks.example.test/stk",
+}
+
+
+class CountingProvider:
+    """Mock payment provider that counts initiation calls; never touches the network."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self._inner = DarajaPaymentProvider(MockDarajaClient())
+
+    def initiate_payment(self, **kwargs: Any) -> Any:
+        self.calls += 1
+        return self._inner.initiate_payment(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def build_counted_container(
+    monkeypatch: pytest.MonkeyPatch,
+    **overrides: Any,
+) -> tuple[AppContainer, CountingProvider]:
+    container = build_container(**overrides)
+    provider = CountingProvider()
+    monkeypatch.setattr(container.payment_service, "_payment_provider", provider)
+    return container, provider
+
+
+# name: (settings overrides, bearer token, expected subject, auth method, principal type)
+DENIED_CASES: dict[str, tuple[dict[str, Any], str, str, str, str]] = {
+    "jwks-unknown-development": (
+        {"app_env": "development"},
+        "jwks:unknown",
+        "jwks-unclassified",
+        "oidc_jwks",
+        "unknown",
+    ),
+    "jwks-application-development": (
+        {"app_env": "development"},
+        "jwks:application",
+        "jwks-app-only",
+        "oidc_jwks",
+        "application",
+    ),
+    "jwks-unknown-outside-development": (
+        {"app_env": "staging"},
+        "jwks:unknown",
+        "jwks-unclassified",
+        "oidc_jwks",
+        "unknown",
+    ),
+    "development-oidc-with-production-daraja": (
+        {
+            "app_env": "development",
+            "oidc_provider_mode": "development",
+            "oidc_development_groups": "finance_approvers",
+            **DARAJA_PRODUCTION_PLACEHOLDERS,
+        },
+        "any-development-credential",
+        "development-operator",
+        "oidc_development",
+        "unknown",
+    ),
+    "static-token-with-production-daraja": (
+        {
+            "app_env": "development",
+            "auth_mode": "token",
+            "operator_approver_token": "approver-token",
+            **DARAJA_PRODUCTION_PLACEHOLDERS,
+        },
+        "approver-token",
+        "operator-approver",
+        "static_token",
+        "unknown",
+    ),
+}
+
+
+def resolve_token(token: str) -> str:
+    if token == "jwks:unknown":
+        return token_for("jwks-unclassified", extra_claims=None)
+    if token == "jwks:application":
+        return token_for("jwks-app-only", extra_claims={"idtyp": "app"})
+    return token
+
+
+@pytest.mark.parametrize("action", ["approve", "reject"])
+@pytest.mark.parametrize("case", list(DENIED_CASES))
+def test_development_exception_does_not_cover_denied_principals(
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    action: str,
+) -> None:
+    overrides, token, subject, method, principal_type = DENIED_CASES[case]
+    container, provider = build_counted_container(monkeypatch, **overrides)
+    approval_id = create_agent_request(container)
+    stored_before = container.approval_service.get_approval_request(approval_id)
+
+    response = post(
+        container,
+        f"/approvals/{approval_id}/{action}",
+        token=resolve_token(token),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["status"] == "reviewer_not_authorized"
+    assert response.json()["approval"] is None
+    assert container.approval_service.get_approval_request(approval_id) == stored_before
+    assert provider.calls == 0
+    assert container.transaction_repository.list_transactions() == []
+    denied = [
+        e for e in container.audit_logger.events if e.event_type == "approval_decision_denied"
+    ]
+    assert len(denied) == 1
+    assert denied[0].actor == "authenticated_operator"
+    assert denied[0].operator_subject == subject
+    assert denied[0].payload["decision"] == action
+    assert denied[0].payload["authentication_method"] == method
+    assert denied[0].payload["principal_type"] == principal_type
+    assert denied[0].payload["reviewer_assurance"] == "unverified"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "token", "subject"),
+    [
+        ({"app_env": "development"}, "jwks:verified", "dev-verified-human"),
+        (
+            {
+                "app_env": "development",
+                "auth_mode": "token",
+                "operator_approver_token": "approver-token",
+            },
+            "approver-token",
+            "operator-approver",
+        ),
+    ],
+    ids=["jwks-verified-human-development", "static-token-development"],
+)
+def test_permitted_development_reviewers_can_decide_single_reviewer_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, Any],
+    token: str,
+    subject: str,
+) -> None:
+    bearer = token_for(subject) if token == "jwks:verified" else token
+    container, provider = build_counted_container(monkeypatch, **overrides)
+    to_approve = create_agent_request(container)
+    to_reject = create_agent_request(container)
+
+    approved = post(container, f"/approvals/{to_approve}/approve", token=bearer)
+    rejected = post(container, f"/approvals/{to_reject}/reject", token=bearer)
+
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["approval"]["reviewer_ids"] == [subject]
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert provider.calls == 1
+    [approved_event] = [
+        e for e in container.audit_logger.events if e.event_type == "approval_approved"
+    ]
+    assert approved_event.operator_subject == subject
+
+
+@pytest.mark.parametrize(
+    ("overrides", "token"),
+    [
+        (
+            {"app_env": "development", "auth_mode": "token", "operator_approver_token": "t"},
+            "t",
+        ),
+        ({"app_env": "development"}, "jwks:unknown"),
+    ],
+    ids=["static-token-development", "jwks-unknown-development"],
+)
+def test_unverified_principals_cannot_approve_multi_reviewer_requests(
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, Any],
+    token: str,
+) -> None:
+    container, provider = build_counted_container(monkeypatch, **overrides)
+    approval_id = create_agent_request(
+        container,
+        amount=container.settings.high_risk_amount_threshold,
+    )
+    stored_before = container.approval_service.get_approval_request(approval_id)
+
+    response = post(container, f"/approvals/{approval_id}/approve", token=resolve_token(token))
+
+    assert response.status_code == 403
+    assert container.approval_service.get_approval_request(approval_id) == stored_before
+    assert provider.calls == 0
+
+
+def test_multi_reviewer_quorum_in_development_requires_two_verified_humans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container, provider = build_counted_container(monkeypatch, app_env="development")
+    approval_id = create_agent_request(
+        container,
+        amount=container.settings.high_risk_amount_threshold,
+    )
+
+    first = post(container, f"/approvals/{approval_id}/approve", token=token_for("human-a"))
+    unclassified = post(
+        container,
+        f"/approvals/{approval_id}/approve",
+        token=resolve_token("jwks:unknown"),
+    )
+    after_denial = container.approval_service.get_approval_request(approval_id)
+    second = post(container, f"/approvals/{approval_id}/approve", token=token_for("human-b"))
+
+    assert first.json()["status"] == "partially_approved"
+    assert unclassified.status_code == 403
+    assert after_denial is not None
+    assert after_denial.status == "pending"
+    assert after_denial.reviewer_ids == ["human-a"]
+    assert second.json()["status"] == "approved"
+    assert provider.calls == 1
