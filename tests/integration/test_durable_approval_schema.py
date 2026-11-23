@@ -64,9 +64,19 @@ def canonical_payload_hash(payload: dict[str, Any]) -> str:
 
 
 def _alembic_config(database_url: str, monkeypatch: pytest.MonkeyPatch) -> Config:
+    """Return an Alembic config for in-process migrations.
+
+    The config is built without ``alembic.ini`` as its file so that ``alembic/env.py``
+    skips ``logging.config.fileConfig``, which would otherwise disable the application's
+    existing loggers and break log assertions in later tests.
+    """
+
     monkeypatch.setenv("DATABASE_URL", database_url)
     get_settings.cache_clear()
-    return Config("alembic.ini")
+    config = Config()
+    config.set_main_option("script_location", "alembic")
+    config.set_main_option("sqlalchemy.url", database_url)
+    return config
 
 
 # --- Dialect-neutral migration round trip (runs everywhere, including CI) ---------------
