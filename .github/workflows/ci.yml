@@ -30,6 +30,26 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
+    # Disposable PostgreSQL for the durable-approval schema tests. It exists only for
+    # this job, uses throwaway CI-only credentials, and is never a shared database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci_test
+          POSTGRES_PASSWORD: ci_test
+          POSTGRES_DB: mpesa_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_test -d mpesa_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MPESA_TEST_POSTGRES_URL: postgresql+psycopg://ci_test:ci_test@localhost:5432/mpesa_ci_test
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -51,7 +71,13 @@ jobs:
         run: python -m compileall app tests scripts alembic
 
       - name: Run tests
-        run: uv run pytest
+        # -rs lists skip reasons; fail if the PostgreSQL schema tests were skipped.
+        run: |
+          uv run pytest -rs | tee pytest-output.txt
+          if grep -q "MPESA_TEST_POSTGRES_URL is not set" pytest-output.txt; then
+            echo "::error::PostgreSQL schema tests were skipped in CI"
+            exit 1
+          fi
 
       - name: Run ruff
         run: uv run ruff check app tests scripts alembic
