@@ -17,6 +17,7 @@ from app.daraja.client import (
 def sandbox_settings() -> Settings:
     return Settings(
         database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+        app_env="development",
         daraja_mode="sandbox",
         daraja_consumer_key="consumer-key",
         daraja_consumer_secret="consumer-secret",
@@ -321,6 +322,7 @@ def test_real_daraja_transaction_status_missing_credentials_raises_cleanly() -> 
     client = RealDarajaClient(
         settings=Settings(
             database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+            app_env="development",
             daraja_mode="sandbox",
             daraja_consumer_key="consumer-key",
             daraja_consumer_secret="consumer-secret",
@@ -489,6 +491,7 @@ def test_real_daraja_client_requires_sandbox_credentials() -> None:
     client = RealDarajaClient(
         settings=Settings(
             database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
+            app_env="development",
             daraja_mode="sandbox",
         ),
         http_client=httpx.Client(

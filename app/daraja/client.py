@@ -14,11 +14,20 @@ import httpx
 from pydantic import BaseModel
 
 from app.config import Settings
+from app.daraja.configuration import (
+    OFFICIAL_DARAJA_BASE_URLS,
+    legacy_credentials_permitted,
+    legacy_setting_name,
+    mode_setting_name,
+    resolve_base_url,
+    resolve_credential,
+    setting_value,
+)
 
 logger = logging.getLogger(__name__)
 
-SAFARICOM_SANDBOX_BASE_URL = "https://sandbox.safaricom.co.ke"
-SAFARICOM_PRODUCTION_BASE_URL = "https://api.safaricom.co.ke"
+SAFARICOM_SANDBOX_BASE_URL = OFFICIAL_DARAJA_BASE_URLS["sandbox"]
+SAFARICOM_PRODUCTION_BASE_URL = OFFICIAL_DARAJA_BASE_URLS["production"]
 OAUTH_TOKEN_PATH = "/oauth/v1/generate"
 STK_PUSH_PATH = "/mpesa/stkpush/v1/processrequest"
 TRANSACTION_STATUS_PATH = "/mpesa/transactionstatus/v1/query"
@@ -188,15 +197,19 @@ class RealDarajaClient:
         *,
         settings: Settings,
         http_client: httpx.Client | None = None,
-        base_url: str | None = None,
         circuit_breaker: DarajaCircuitBreaker | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._settings = settings
+        # Redirects are never followed: a 3xx from Daraja is treated as a failed call, so
+        # traffic cannot be steered from the trusted endpoint to another host.
         self._http_client = http_client or httpx.Client(
-            timeout=settings.daraja_request_timeout_seconds
+            timeout=settings.daraja_request_timeout_seconds,
+            follow_redirects=False,
         )
-        self._base_url = (base_url or self._resolve_base_url()).rstrip("/")
+        # The endpoint comes only from the trust policy; there is no override.
+        self._base_url = resolve_base_url(settings)
+        self._allow_legacy_credentials = legacy_credentials_permitted(settings)
         self._sleep = sleep
         self._circuit_breaker = circuit_breaker or DarajaCircuitBreaker(
             enabled=settings.daraja_circuit_breaker_enabled,
@@ -523,40 +536,32 @@ class RealDarajaClient:
         return f"Daraja transaction status request failed: {exc}"
 
     def _required_setting(self, name: str) -> str:
-        value = getattr(self._settings, name)
-        if not isinstance(value, str) or value == "":
+        value = setting_value(self._settings, name)
+        if value is None:
             raise ValueError(
                 f"{name.upper()} is required for Daraja {self._settings.daraja_mode} mode."
             )
         return value
 
-    def _resolve_base_url(self) -> str:
-        if self._settings.daraja_mode == "sandbox":
-            return self._settings.daraja_sandbox_base_url
-        if self._settings.daraja_mode == "production":
-            return self._settings.daraja_production_base_url
-        return SAFARICOM_SANDBOX_BASE_URL
-
     def _required_credential(self, credential_name: str) -> str:
+        resolved = resolve_credential(
+            self._settings,
+            credential_name,
+            allow_legacy=self._allow_legacy_credentials,
+        )
+        if resolved.value is not None:
+            return resolved.value
+
         mode = self._settings.daraja_mode
-        setting_name = f"daraja_{credential_name}"
-        mode_setting_name = f"daraja_{mode}_{credential_name}"
-        value = getattr(self._settings, mode_setting_name, None)
-        if not isinstance(value, str) or value == "":
-            value = getattr(self._settings, setting_name, None)
-
-        if isinstance(value, str) and value != "":
-            return value
-
-        if mode == "production":
+        specific = mode_setting_name(mode, credential_name)
+        if self._allow_legacy_credentials:
             raise ValueError(
-                f"{mode_setting_name.upper()} or {setting_name.upper()} is required "
-                "for Daraja production mode."
+                f"{specific} or {legacy_setting_name(credential_name)} is required "
+                f"for Daraja {mode} mode."
             )
-
         raise ValueError(
-            f"{mode_setting_name.upper()} or {setting_name.upper()} is required "
-            f"for Daraja {mode} mode."
+            f"{specific} is required for Daraja {mode} mode; legacy unprefixed "
+            "credentials are only permitted in local development."
         )
 
     def _validate_production_credentials(self) -> None:

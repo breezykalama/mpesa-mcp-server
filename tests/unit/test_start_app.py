@@ -44,19 +44,18 @@ def test_main_validates_startup_settings(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(start_app, "get_settings", lambda: settings)
     monkeypatch.setattr(start_app, "configure_logging", lambda **kwargs: None)
-    monkeypatch.setattr(start_app, "run_migrations_if_needed", lambda settings: None)
     monkeypatch.setattr(start_app, "start_uvicorn", lambda settings: None)
     monkeypatch.setattr(
         start_app,
-        "validate_startup_settings",
-        lambda settings: calls.append("validated"),
+        "enforce_startup_safety",
+        lambda settings: calls.append("startup_safety_enforced"),
     )
     monkeypatch.setattr(
         start_app,
-        "validate_startup_dependencies",
-        lambda settings: calls.append("dependencies_validated"),
+        "run_migrations_if_needed",
+        lambda settings: calls.append("migrations"),
     )
 
     start_app.main()
 
-    assert calls == ["validated", "dependencies_validated"]
+    assert calls == ["startup_safety_enforced", "migrations"]

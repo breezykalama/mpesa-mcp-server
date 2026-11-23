@@ -14,9 +14,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.config import Settings, get_settings  # noqa: E402
-from app.config_validation import validate_startup_settings  # noqa: E402
-from app.infrastructure.health import validate_startup_dependencies  # noqa: E402
 from app.logging.config import configure_logging  # noqa: E402
+from app.startup import enforce_startup_safety  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +86,9 @@ def main() -> None:
 
     settings = get_settings()
     configure_logging(log_level=settings.log_level, log_format=settings.log_format)
-    validate_startup_settings(settings)
-    validate_startup_dependencies(settings)
+    # Fail closed before migrations or serving. The FastAPI lifespan re-runs the same
+    # gate, so starting uvicorn directly is covered too.
+    enforce_startup_safety(settings)
     run_migrations_if_needed(settings)
     start_uvicorn(settings)
 

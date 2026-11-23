@@ -2,8 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
+from app.bootstrap.container import AppContainer
+from app.callbacks.routes import get_app_container
 from app.main import app
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def validated_container() -> Iterator[None]:
+    # Every route, including static HTML, sits behind the startup safety gate, so the
+    # test provides an explicit container instead of the unvalidated environment.
+    app.dependency_overrides[get_app_container] = AppContainer.mock
+    yield
+    app.dependency_overrides.clear()
 
 
 def test_operator_ui_returns_html() -> None:

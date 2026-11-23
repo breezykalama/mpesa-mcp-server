@@ -208,7 +208,7 @@ The reviewer of every approve or reject decision is the server-authenticated pri
 
 Reviewer eligibility depends on how the operator authenticated:
 
-| Authentication | Outside development (`APP_ENV` not development-like, or `DARAJA_MODE=production`) | Development (`APP_ENV` in `development`, `dev`, `local`, `test` and Daraja not in production mode) |
+| Authentication | Outside local development (staging, production-grade, or any `DARAJA_MODE=production` deployment) | Local development tier (see [deployment tiers](docs/security-model.md#deployment-tiers)) |
 | --- | --- | --- |
 | OIDC JWKS, delegated user token (`scp` claim) | Approve and reject; counts toward multi-reviewer quorum | Same |
 | OIDC JWKS, app-only token (`idtyp=app`) or no delegation evidence | Denied (`403 reviewer_not_authorized`) | Denied |
@@ -381,6 +381,8 @@ Create a local environment file:
 ```bash
 cp .env.example .env
 ```
+
+`.env.example` is an explicit local development configuration (`APP_ENV=development`, mock Daraja, in-memory components, operator auth disabled). Startup classifies every configuration into local development, non-production testing (`APP_ENV=staging`), or production-grade, and rejects unsafe combinations before serving; see [Production Configuration Safety Gate](docs/security-model.md#production-configuration-safety-gate). Production-grade startup, including any `DARAJA_MODE=production` deployment, is currently blocked until durable approval persistence exists. Daraja endpoints are restricted to the official sandbox and production URLs (use `DARAJA_MODE=mock` for local stubs), legacy unprefixed `DARAJA_*` credentials are honoured only in local development, and serving is refused with `503` even if the ASGI lifespan is disabled; see [Daraja endpoint trust policy](docs/security-model.md#daraja-endpoint-trust-policy).
 
 The current `.env.example` includes:
 

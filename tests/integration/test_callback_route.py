@@ -45,6 +45,7 @@ def test_fastapi_callback_route_returns_expected_response() -> None:
         )
 
     app.dependency_overrides[get_stk_callback_handler] = override_handler
+    app.dependency_overrides[get_app_container] = AppContainer.mock
 
     try:
         client = TestClient(app)

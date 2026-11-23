@@ -13,14 +13,10 @@ if str(PROJECT_ROOT) not in sys.path:
 def main() -> None:
     """Run the MCP server from the project checkout."""
 
-    from app.config import get_settings
-    from app.config_validation import validate_startup_settings
-    from app.infrastructure.health import validate_startup_dependencies
     from app.mcp.server import run
 
-    settings = get_settings()
-    validate_startup_settings(settings)
-    validate_startup_dependencies(settings)
+    # run() builds the server from the environment through create_mcp_server(), which
+    # enforces app.startup.enforce_startup_safety before any provider is constructed.
     run()
 
 

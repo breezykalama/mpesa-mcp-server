@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from secrets import compare_digest
 from typing import Annotated, Any
 
@@ -12,17 +13,53 @@ from fastapi.responses import JSONResponse
 from app.bootstrap.container import AppContainer, create_app_container
 from app.callbacks.handlers import CallbackProcessingResult, StkCallbackHandler
 from app.callbacks.replay import build_callback_replay_key
+from app.config_validation import StartupConfigValidationError
 from app.infrastructure.health import InfrastructureUnavailableError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_container = create_app_container()
+_container: AppContainer | None = None
+_container_rejection: StartupConfigValidationError | None = None
+_container_lock = threading.Lock()
+
+
+def initialized_app_container() -> AppContainer | None:
+    """Return the container if it has already been built, without building it.
+
+    ``_container`` is assigned exactly once, only after validation succeeded, so a
+    non-``None`` value is proof of a validated container. Reading the reference is
+    atomic; callers needing construction must use ``get_app_container``.
+    """
+
+    return _container
 
 
 def get_app_container() -> AppContainer:
-    """Return the application container dependency."""
+    """Return the application container, building it once through the safety gate.
 
+    The container is never built at import time. ``create_app_container`` validates the
+    configuration before constructing anything, so this accessor fails closed whether
+    or not the ASGI lifespan ran (for example ``uvicorn --lifespan off``). A container
+    only exists if validation succeeded; there is no separate "validated" flag.
+
+    A rejection is remembered so later requests fail closed without re-validating or
+    re-logging. Settings are cached for the process lifetime, so the outcome cannot
+    change without a restart.
+    """
+
+    global _container, _container_rejection
+    if _container is not None:
+        return _container
+    with _container_lock:
+        if _container is None:
+            if _container_rejection is not None:
+                raise _container_rejection.with_traceback(None)
+            try:
+                _container = create_app_container()
+            except StartupConfigValidationError as exc:
+                _container_rejection = exc
+                raise
     return _container
 
 

@@ -8,6 +8,8 @@ This runbook is for internal launch validation only. It does not mean the platfo
 
 The goal is to prove that the production configuration, provider integration, callback path, audit trail, operator workflow, and rollback controls behave correctly before any wider use.
 
+> **Currently blocked.** The production configuration safety gate rejects every production-grade configuration with `APPROVAL_PERSISTENCE` until durable, shared approval persistence is implemented. `DARAJA_MODE=production` cannot start today, so this runbook cannot be executed yet. See [Security Model](security-model.md#durable-approval-blocker).
+
 ## Preconditions Checklist
 
 Complete every item before starting Phase 1.
@@ -15,7 +17,11 @@ Complete every item before starting Phase 1.
 - [ ] Production credentials have been obtained from Safaricom.
 - [ ] Production shortcode, passkey, security credential, and callback URL have been confirmed.
 - [ ] Production callback URL is publicly reachable through the approved ingress path.
-- [ ] `DARAJA_MODE=production` is configured only in the intended validation environment.
+- [ ] `DARAJA_MODE=production` is configured only in the intended validation environment, together with `APP_ENV=production`.
+- [ ] Startup passes the production configuration safety gate (OIDC JWKS auth, PostgreSQL, Redis-backed rate limiting and replay protection, strong callback secrets, durable approvals).
+- [ ] `DARAJA_PRODUCTION_BASE_URL` is the official `https://api.safaricom.co.ke` endpoint; no gateway or proxy is configured.
+- [ ] Only `DARAJA_PRODUCTION_*` credentials are set; legacy unprefixed `DARAJA_*` credentials are unset.
+- [ ] `DARAJA_INITIATOR_NAME` and `DARAJA_SECURITY_CREDENTIAL` are set, and the Transaction Status result and timeout URLs use the same public host as `DARAJA_PRODUCTION_CALLBACK_URL`.
 - [ ] `CALLBACK_SOURCE_VERIFICATION_MODE=trusted_proxy` is enabled.
 - [ ] Trusted proxy callback verification is configured.
 - [ ] Callback shared secret validation is configured if required by the deployment.
