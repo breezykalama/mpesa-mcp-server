@@ -4,13 +4,28 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+CANONICAL_MODE_FIELDS = (
+    "daraja_mode",
+    "payment_provider",
+    "storage_mode",
+    "rate_limit_mode",
+    "callback_replay_mode",
+    "callback_source_verification_mode",
+    "auth_mode",
+    "oidc_provider_mode",
+)
+"""Mode-like settings that are canonicalized to trimmed lower case at load time."""
 
 
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables."""
 
-    app_env: str = "development"
+    # Unset means "not declared". Only mock Daraja may run without an explicit APP_ENV;
+    # see app.deployment.classify_deployment.
+    app_env: str | None = None
     database_url: str = "postgresql+asyncpg://mpesa:mpesa@localhost:5432/mpesa_mcp"
     storage_mode: str = "memory"
     payment_provider: str = "daraja"
@@ -98,23 +113,38 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator(*CANONICAL_MODE_FIELDS, mode="before")
+    @classmethod
+    def _canonical_mode(cls, value: object) -> object:
+        """Canonicalize mode-like settings once so every consumer sees one value."""
 
-DEVELOPMENT_ENVIRONMENTS = frozenset({"development", "dev", "local", "test"})
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def _canonical_app_env(cls, value: object) -> object:
+        """Canonicalize APP_ENV; a blank value means "not declared"."""
+
+        if isinstance(value, str):
+            return value.strip().lower() or None
+        return value
 
 
 def allows_development_approval_authority(settings: Settings) -> bool:
     """Return whether non-verified operator identities may make approval decisions.
 
     Development identities, shared static tokens, and disabled-auth principals are only
-    accepted as single reviewers in explicitly development-like environments that are
-    not configured for production Daraja. Everywhere else, approval decisions require
-    an IdP-verified human identity. There is intentionally no setting that widens this.
+    accepted as single reviewers when the authoritative deployment classification is a
+    contradiction-free local development tier. That is never the case for
+    ``DARAJA_MODE=production``, a production Daraja host, ``APP_ENV=production``, or an
+    unknown ``APP_ENV``. There is intentionally no setting that widens this.
     """
 
-    return (
-        settings.app_env.strip().lower() in DEVELOPMENT_ENVIRONMENTS
-        and settings.daraja_mode != "production"
-    )
+    from app.deployment import classify_deployment
+
+    return classify_deployment(settings).allows_development_shortcuts
 
 
 @lru_cache

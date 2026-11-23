@@ -34,7 +34,14 @@ def test_production_mode_missing_credentials_fails() -> None:
     assert "DARAJA_PRODUCTION_CALLBACK_URL" in str(exc_info.value)
 
 
-def test_production_mode_with_credentials_passes() -> None:
+def test_production_mode_with_credentials_is_still_blocked() -> None:
+    """Credentials alone no longer make production Daraja startable.
+
+    This configuration previously passed. It leaves APP_ENV unset, disables operator
+    auth, and uses in-memory storage, rate limiting, and replay protection, all of
+    which are rejected now that DARAJA_MODE=production requires production controls.
+    """
+
     settings = Settings(
         database_url="postgresql+asyncpg://user:pass@localhost:5432/test",
         daraja_mode="production",
@@ -43,12 +50,24 @@ def test_production_mode_with_credentials_passes() -> None:
         daraja_production_consumer_secret="consumer-secret",
         daraja_production_passkey="passkey",
         daraja_production_shortcode="174379",
-        daraja_production_callback_url="https://example.test/callback",
+        daraja_production_callback_url="https://callbacks.mpesa-ops.co.ke/callback",
         callback_source_verification_mode="trusted_proxy",
         trusted_proxy_shared_secret="trusted-proxy-secret",
     )
 
-    validate_startup_settings(settings)
+    with pytest.raises(StartupConfigValidationError) as exc_info:
+        validate_startup_settings(settings)
+
+    rejected = set(exc_info.value.settings)
+    assert not any(name.startswith("DARAJA_PRODUCTION_") for name in rejected)
+    assert {
+        "APP_ENV",
+        "OPERATOR_AUTH_ENABLED",
+        "STORAGE_MODE",
+        "RATE_LIMIT_MODE",
+        "CALLBACK_REPLAY_MODE",
+        "APPROVAL_PERSISTENCE",
+    } <= rejected
 
 
 def test_redis_mode_missing_config_fails() -> None:

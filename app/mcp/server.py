@@ -9,6 +9,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.bootstrap.container import AppContainer, create_app_container
+from app.config import get_settings
 from app.logging.config import configure_logging
 from app.mcp.tools import (
     check_payment_status_tool,
@@ -21,6 +22,7 @@ from app.mcp.tools import (
     run_reconciliation_tool,
 )
 from app.policy.tool_policy import AGENT_FORBIDDEN_TOOLS
+from app.startup import enforce_startup_safety
 
 MCP_SERVER_NAME = "mpesa-mcp-server"
 REGISTERED_TOOL_NAMES = (
@@ -171,9 +173,18 @@ def create_tool_handlers(container: AppContainer) -> dict[str, ToolHandler]:
 
 
 def create_mcp_server(container: AppContainer | None = None) -> FastMCP:
-    """Create the M-Pesa MCP server and register tools."""
+    """Create the M-Pesa MCP server and register tools.
 
-    resolved_container = container or create_app_container()
+    Without an injected container, the server is built from the environment. That is
+    the serving path used by ``run()``, so the startup safety gate runs first and the
+    container (including any payment provider) is only built for a safe configuration.
+    """
+
+    if container is None:
+        enforce_startup_safety(get_settings())
+        resolved_container = create_app_container()
+    else:
+        resolved_container = container
     configure_logging(
         log_level=resolved_container.settings.log_level,
         log_format=resolved_container.settings.log_format,

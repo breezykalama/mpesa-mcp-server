@@ -114,7 +114,7 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Add source verification abstraction with development, trusted proxy, and strict block modes.
 - [x] **Done:** Add trusted proxy header verification for production deployment.
 - [x] **Done:** Disallow development callback source verification when Daraja production mode is enabled.
-- [ ] **Todo:** Require callback secret outside local development.
+- [x] **Done:** Require callback secret outside local development (enforced for staging and production-grade tiers; at least 32 non-placeholder characters for production-grade).
 - [x] **Done:** Add production callback source verification strategy using a trusted proxy boundary.
 - [ ] **Todo:** Add stronger payload integrity checks if provider support is available.
 - [ ] **Todo:** Document callback verification process.
@@ -147,6 +147,20 @@ These items should be complete before sending even a small real payment through 
 - [x] **Done:** Add startup validation for operator auth configuration.
 - [x] **Done:** Add startup validation for callback shared secret outside development.
 - [x] **Done:** Add startup validation for Redis and Postgres mode configuration.
+- [x] **Done:** Add a centralized deployment classification (local development, non-production testing, production-grade) that does not rely on `APP_ENV` alone; `DARAJA_MODE=production` and production Daraja hosts always require production-grade controls.
+- [x] **Done:** Reject production-grade configurations that use in-memory storage, in-memory or disabled rate limiting, in-memory or disabled callback replay protection, development callback verification, weak or placeholder secrets, placeholder Daraja credentials, non-https Daraja or OIDC URLs, or default database credentials.
+- [x] **Done:** Enforce startup validation from the FastAPI lifespan, `scripts/start_app.py`, and MCP server startup; build the application container only after validation.
+- [x] **Done:** Make serving protection independent of the ASGI lifespan: the environment container factory validates before construction, and request middleware refuses every route with `503` until a validated container exists (covers `uvicorn --lifespan off`).
+- [x] **Done:** Replace production-host detection with an explicit Daraja endpoint allowlist (official sandbox and production URLs only; no gateways, IP literals, ports, userinfo, or ambiguous forms); disable HTTP redirects in the Daraja client.
+- [x] **Done:** Share credential resolution between validator and client; honour legacy unprefixed `DARAJA_*` credentials only in local development.
+- [x] **Done:** Validate production Transaction Status settings (initiator, security credential, result and timeout URLs on the trusted callback host) and reject private, loopback, link-local, internal, and malformed callback destinations.
+- [x] **Done:** Reject numeric address forms (leading-zero, octal, hex, short-form, integer) and numeric top-level labels in callback destinations and Daraja endpoints; preserve DNS and Punycode names.
+- [x] **Done:** Parse `DATABASE_URL` and `REDIS_URL` offline with the runtime constructors so malformed URLs fail validation without exposing credentials.
+- [ ] **Todo (operational):** Prove callback host DNS ownership, private-address-free resolution (including wildcard DNS), TLS certificates, secure ingress, trusted proxy injection, and callback access controls before production.
+- [ ] **Todo:** Configure logging when serving without the ASGI lifespan so the single rejection line is structured.
+- [x] **Done:** Canonicalize mode-like settings once at load time so classification, validation, and runtime agree.
+- [ ] **Todo:** Define a reviewed production gateway policy if a non-official Daraja endpoint is ever required.
+- [ ] **Todo (blocker):** Production-grade startup is rejected with `APPROVAL_PERSISTENCE` until durable, shared approval persistence exists. `STORAGE_MODE=postgres` does not make approvals durable.
 - [x] **Done:** Add startup dependency validation for configured Postgres and Redis modes.
 - [x] **Done:** Add graceful infrastructure failure policy for Postgres and Redis outages.
 - [x] **Done:** Fail closed when Redis-backed rate limiting or callback replay protection is unavailable.
@@ -190,8 +204,8 @@ These items should be complete before internal users or operators depend on the 
 - [x] **Done:** Add optional operator identity and mapped role fields to audit events.
 - [x] **Done:** Populate operator identity fields on approval decision audit events.
 - [x] **Done:** Classify OIDC principals as delegated human, application, or unknown; record authentication method on every operator identity.
-- [ ] **Todo:** Block `OPERATOR_AUTH_ENABLED=false` and `OIDC_PROVIDER_MODE=development` at startup in production-like environments (today they are denied approval authority but still grant read and admin access).
-- [ ] **Todo:** Make the production environment gate fail closed: `APP_ENV` currently defaults to `development`, which grants development approval authority to deployments that omit it unless `DARAJA_MODE=production`.
+- [x] **Done:** Block `OPERATOR_AUTH_ENABLED=false`, `OIDC_PROVIDER_MODE=development`, and shared static operator tokens at startup for production-grade deployments.
+- [x] **Done:** Make the production environment gate fail closed: `APP_ENV` must be explicit unless `DARAJA_MODE=mock`, unknown values are rejected and treated as production-grade, and `DARAJA_MODE=production` requires `APP_ENV=production`.
 - [ ] **Todo:** Harden OIDC verification: reuse one provider per container so discovery/JWKS caching works, refresh JWKS on unknown `kid`, validate the discovery `issuer`, validate token type, allowlist operator client IDs (`azp`/`appid`), and require a specific delegated scope before treating a token as a verified human.
 - [x] **Done:** Add startup validation for required OIDC issuer and audience configuration.
 - [x] **Done:** Add viewer, approver, and admin roles.

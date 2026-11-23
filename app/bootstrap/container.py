@@ -160,9 +160,20 @@ class AppContainer:
 
     @classmethod
     def from_environment(cls) -> AppContainer:
-        """Build the default application container from environment settings."""
+        """Build the application container from environment settings, fail closed.
 
-        return cls.mock(settings=get_settings())
+        This is the only environment-backed constructor, and it is a serving path: the
+        authoritative configuration gate runs before any repository, client, or payment
+        provider is built. It performs configuration validation only; network
+        dependency checks stay in the startup entry points. Tests that need a container
+        for explicit settings use ``AppContainer.mock(settings=...)``.
+        """
+
+        from app.startup import enforce_startup_safety
+
+        settings = get_settings()
+        enforce_startup_safety(settings, check_dependencies=False)
+        return cls.mock(settings=settings)
 
     @staticmethod
     def _create_daraja_client(settings: Settings) -> DarajaClientProtocol:

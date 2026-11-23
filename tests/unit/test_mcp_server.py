@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.bootstrap.container import AppContainer
 from app.mcp.schemas import McpToolResponse
 from app.mcp.server import (
     REGISTERED_TOOL_NAMES,
-    create_mcp_dependencies,
     create_mcp_server,
     create_tool_handlers,
     list_registered_tool_names,
@@ -16,19 +16,19 @@ from pytest import MonkeyPatch
 
 
 def test_server_can_be_created() -> None:
-    server = create_mcp_server()
+    server = create_mcp_server(container=AppContainer.mock())
 
     assert server is not None
 
 
 def test_expected_tools_are_registered() -> None:
-    server = create_mcp_server()
+    server = create_mcp_server(container=AppContainer.mock())
 
     assert set(list_registered_tool_names(server)) == set(REGISTERED_TOOL_NAMES)
 
 
 def test_registered_handler_delegates_to_stk_push_wrapper(monkeypatch: MonkeyPatch) -> None:
-    dependencies = create_mcp_dependencies()
+    dependencies = AppContainer.mock()
     calls: list[dict[str, Any]] = []
 
     def fake_initiate_stk_push_tool(
@@ -65,7 +65,7 @@ def test_registered_handler_delegates_to_stk_push_wrapper(monkeypatch: MonkeyPat
 
 
 def test_registered_handler_delegates_to_today_summary_wrapper(monkeypatch: MonkeyPatch) -> None:
-    dependencies = create_mcp_dependencies()
+    dependencies = AppContainer.mock()
     calls: list[object] = []
 
     def fake_get_today_summary_tool(
