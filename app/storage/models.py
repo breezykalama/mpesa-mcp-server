@@ -5,8 +5,27 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+DocumentJSON = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+"""JSON document column type: JSONB on PostgreSQL, generic JSON elsewhere.
+
+``none_as_null`` stores Python ``None`` as SQL ``NULL`` (not JSON ``null``) so that
+``NOT NULL`` constraints cannot be bypassed with a JSON null document.
+"""
 
 
 class Base(DeclarativeBase):
@@ -95,3 +114,156 @@ class AuditEventModel(Base):
     operator_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     operator_display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     operator_roles: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+
+class ApprovalRequestModel(Base):
+    """Durable approval request (schema foundation; not yet wired into the runtime).
+
+    The payment payload, its integrity hash, the policy snapshot and the reviewer quorum
+    are captured once at creation. On PostgreSQL, migration ``0008_durable_approvals``
+    installs triggers that reject any later change to those columns, reject reopening a
+    resolved request, and reject deletion of requests.
+    """
+
+    __tablename__ = "approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'expired')",
+            name="ck_approval_requests_status_allowed",
+        ),
+        CheckConstraint(
+            "required_reviewers BETWEEN 1 AND 10",
+            name="ck_approval_requests_required_reviewers_range",
+        ),
+        CheckConstraint(
+            "payload_hash_algorithm IN ('sha256')",
+            name="ck_approval_requests_payload_hash_algorithm_allowed",
+        ),
+        CheckConstraint(
+            "length(payload_hash) = 64 AND payload_hash = lower(payload_hash)",
+            name="ck_approval_requests_payload_hash_format",
+        ),
+        CheckConstraint(
+            "length(action) > 0",
+            name="ck_approval_requests_action_not_empty",
+        ),
+        CheckConstraint(
+            "length(policy_version) > 0",
+            name="ck_approval_requests_policy_version_not_empty",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_approval_requests_expiry_after_creation",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND resolved_at IS NULL)"
+            " OR (status <> 'pending' AND resolved_at IS NOT NULL)",
+            name="ck_approval_requests_resolution_consistent",
+        ),
+        CheckConstraint("version >= 1", name="ck_approval_requests_version_positive"),
+        UniqueConstraint(
+            "approval_id",
+            "payload_hash",
+            name="uq_approval_requests_approval_id_payload_hash",
+        ),
+        Index("ix_approval_requests_status_expires_at", "status", "expires_at"),
+    )
+
+    approval_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    payment_payload: Mapped[dict[str, Any]] = mapped_column(DocumentJSON, nullable=False)
+    payload_hash_algorithm: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="sha256",
+    )
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_snapshot: Mapped[dict[str, Any]] = mapped_column(DocumentJSON, nullable=False)
+    required_reviewers: Mapped[int] = mapped_column(Integer, nullable=False)
+    requested_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        index=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __mapper_args__ = {"version_id_col": version}
+
+
+class ApprovalDecisionModel(Base):
+    """Append-only record of one reviewer's approve or reject decision.
+
+    Each reviewer, identified by ``(reviewer_issuer, reviewer_subject)``, may decide an
+    approval at most once. The composite foreign key on ``(approval_id, payload_hash)``
+    binds every decision to the exact payload hash of its approval request. On
+    PostgreSQL, triggers make these rows immutable (no UPDATE or DELETE).
+    """
+
+    __tablename__ = "approval_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["approval_id", "payload_hash"],
+            ["approval_requests.approval_id", "approval_requests.payload_hash"],
+            name="fk_approval_decisions_approval_payload_hash",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "approval_id",
+            "reviewer_issuer",
+            "reviewer_subject",
+            name="uq_approval_decisions_reviewer",
+        ),
+        CheckConstraint(
+            "decision IN ('approve', 'reject')",
+            name="ck_approval_decisions_decision_allowed",
+        ),
+        CheckConstraint(
+            "length(reviewer_issuer) > 0",
+            name="ck_approval_decisions_reviewer_issuer_not_empty",
+        ),
+        CheckConstraint(
+            "length(reviewer_subject) > 0",
+            name="ck_approval_decisions_reviewer_subject_not_empty",
+        ),
+        CheckConstraint(
+            "authentication_method IN"
+            " ('oidc_jwks', 'oidc_development', 'static_token', 'auth_disabled')",
+            name="ck_approval_decisions_authentication_method_allowed",
+        ),
+        CheckConstraint(
+            "principal_type IN ('human', 'application', 'unknown')",
+            name="ck_approval_decisions_principal_type_allowed",
+        ),
+        Index(
+            "ix_approval_decisions_reviewer",
+            "reviewer_issuer",
+            "reviewer_subject",
+        ),
+    )
+
+    decision_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    reviewer_issuer: Mapped[str] = mapped_column(String(512), nullable=False)
+    reviewer_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reviewer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    reviewer_display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reviewer_roles: Mapped[list[str]] = mapped_column(DocumentJSON, nullable=False)
+    authentication_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
