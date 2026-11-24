@@ -8,10 +8,8 @@ SQLite is never substituted for PostgreSQL-specific behaviour.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
@@ -20,19 +18,17 @@ from uuid import uuid4
 
 import pytest
 from alembic import command
-from alembic.config import Config
+from app.approvals.integrity import canonical_payload_hash
 from app.config import get_settings
 from app.storage.models import ApprovalDecisionModel, ApprovalRequestModel
 from sqlalchemy import Engine, create_engine, inspect, select, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
+from tests.integration.postgres_support import alembic_config
 
-POSTGRES_URL_ENV = "MPESA_TEST_POSTGRES_URL"
 HEAD_REVISION = "0008_durable_approvals"
 PREVIOUS_REVISION = "0007_audit_operator_roles"
-LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 NOT_NULL_VIOLATION = "23502"
 FOREIGN_KEY_VIOLATION = "23503"
@@ -56,29 +52,6 @@ POLICY_SNAPSHOT: dict[str, Any] = {
 }
 
 
-def canonical_payload_hash(payload: dict[str, Any]) -> str:
-    """Return the SHA-256 of the canonical JSON encoding of ``payload``."""
-
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _alembic_config(database_url: str, monkeypatch: pytest.MonkeyPatch) -> Config:
-    """Return an Alembic config for in-process migrations.
-
-    The config is built without ``alembic.ini`` as its file so that ``alembic/env.py``
-    skips ``logging.config.fileConfig``, which would otherwise disable the application's
-    existing loggers and break log assertions in later tests.
-    """
-
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    get_settings.cache_clear()
-    config = Config()
-    config.set_main_option("script_location", "alembic")
-    config.set_main_option("sqlalchemy.url", database_url)
-    return config
-
-
 # --- Dialect-neutral migration round trip (runs everywhere, including CI) ---------------
 
 
@@ -87,7 +60,7 @@ def test_sqlite_migration_upgrade_and_downgrade_round_trip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'durable-approvals.sqlite'}"
-    config = _alembic_config(database_url, monkeypatch)
+    config = alembic_config(database_url, monkeypatch)
     engine = create_engine(database_url)
     try:
         command.upgrade(config, "head")
@@ -106,48 +79,7 @@ def test_sqlite_migration_upgrade_and_downgrade_round_trip(
         get_settings.cache_clear()
 
 
-# --- PostgreSQL-specific guarantees -----------------------------------------------------
-
-
-def _disposable_postgres_url() -> str:
-    raw_url = os.environ.get(POSTGRES_URL_ENV, "").strip()
-    if not raw_url:
-        pytest.skip(f"{POSTGRES_URL_ENV} is not set; PostgreSQL schema tests skipped")
-
-    url = make_url(raw_url)
-    if not url.drivername.startswith("postgresql"):
-        pytest.fail(f"{POSTGRES_URL_ENV} must be a PostgreSQL URL")
-    if url.host not in LOCAL_HOSTS:
-        pytest.fail(f"{POSTGRES_URL_ENV} must point at a local disposable instance")
-    if not (url.database or "").endswith("_test"):
-        pytest.fail(f"{POSTGRES_URL_ENV} database name must end with '_test'")
-    return raw_url
-
-
-@pytest.fixture(scope="module")
-def postgres_url() -> Iterator[str]:
-    database_url = _disposable_postgres_url()
-    monkeypatch = pytest.MonkeyPatch()
-    config = _alembic_config(database_url, monkeypatch)
-    try:
-        command.downgrade(config, "base")
-        command.upgrade(config, "head")
-        yield database_url
-    finally:
-        monkeypatch.undo()
-        get_settings.cache_clear()
-
-
-@pytest.fixture(scope="module")
-def engine(postgres_url: str) -> Iterator[Engine]:
-    database_engine = create_engine(postgres_url)
-    yield database_engine
-    database_engine.dispose()
-
-
-@pytest.fixture
-def session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+# --- PostgreSQL-specific guarantees (fixtures in tests/integration/conftest.py) --------
 
 
 def _request(**overrides: Any) -> ApprovalRequestModel:
@@ -250,7 +182,7 @@ def test_postgres_migration_upgrade_and_downgrade(
     engine: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = _alembic_config(postgres_url, monkeypatch)
+    config = alembic_config(postgres_url, monkeypatch)
     trigger_query = text(
         "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal "
         "AND tgrelid IN ('approval_requests'::regclass, 'approval_decisions'::regclass)"
