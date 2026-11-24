@@ -598,24 +598,38 @@ def _outcomes(results: list[DecisionOutcome | BaseException]) -> list[DecisionOu
     return [result for result in results if isinstance(result, DecisionOutcome)]
 
 
+@pytest.mark.parametrize(
+    ("approvals", "rejections"),
+    [(8, 0), (0, 8), (6, 2)],
+    ids=["approve-only", "reject-only", "mixed"],
+)
 def test_concurrent_decisions_by_same_reviewer(
     repository: PostgresApprovalRepository,
     engine: Engine,
     make_engine: Callable[[], Engine],
+    approvals: int,
+    rejections: int,
 ) -> None:
     approval_id = _create(repository, required_reviewers=2).approval.approval_id
     same = _reviewer("same")
-    calls: list[DecisionCall] = [(same, "approve")] * 6 + [(same, "reject")] * 2
+    calls: list[DecisionCall] = [(same, "approve")] * approvals + [(same, "reject")] * rejections
 
     results = _race(make_engine, engine, approval_id, calls)
 
     accepted = _outcomes(results)
     assert len(accepted) == 1
-    assert all(
-        isinstance(result, DuplicateReviewerDecisionError)
-        for result in results
-        if not isinstance(result, DecisionOutcome)
+    # If the winning decision was an approval (quorum 2, still pending), every other
+    # attempt is a duplicate; if a rejection won, the request is terminal and the status
+    # check refuses the rest first. Either way exactly one decision is persisted.
+    winner = accepted[0]
+    expected_refusal: type[ApprovalDecisionRejectedError] = (
+        DuplicateReviewerDecisionError
+        if winner.decision.decision == "approve"
+        else ApprovalNotPendingError
     )
+    refused = [result for result in results if not isinstance(result, DecisionOutcome)]
+    assert len(refused) == len(calls) - 1
+    assert all(type(result) is expected_refusal for result in refused)
     _, version, rows = _state(engine, approval_id)
     assert len(rows) == 1 and version == 2
     _assert_consistent(engine, approval_id, 2)
