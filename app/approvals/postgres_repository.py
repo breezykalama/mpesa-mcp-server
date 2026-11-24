@@ -139,8 +139,11 @@ class PostgresApprovalRepository:
         canonical_payload_json(payload)
         canonical_payload_json(policy_snapshot)
 
+        # Keep the ID in a local: after commit the ORM instance may be expired and, once
+        # the session closes, detached, so its attributes must not be read again.
+        new_approval_id = approval_id or str(uuid4())
         model = ApprovalRequestModel(
-            approval_id=approval_id or str(uuid4()),
+            approval_id=new_approval_id,
             action=action,
             status="pending",
             reason=reason,
@@ -173,7 +176,7 @@ class PostgresApprovalRepository:
                 session.rollback()
                 raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
 
-        record = self.get(model.approval_id)
+        record = self.get(new_approval_id)
         if record is None:  # pragma: no cover - committed row must be readable
             raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE)
         return record

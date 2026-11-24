@@ -478,3 +478,43 @@ def test_database_unavailable_maps_to_infrastructure_error() -> None:
             _create(repository)
     finally:
         unreachable.dispose()
+
+
+@pytest.mark.parametrize("supplied_id", [False, True], ids=["generated-id", "supplied-id"])
+def test_create_with_default_expiring_sessionmaker(
+    engine: Engine,
+    independent_engine: Engine,
+    supplied_id: bool,
+) -> None:
+    """Regression: a default sessionmaker (expire_on_commit=True) must not break create().
+
+    Reading the committed ORM instance after its session closed raised
+    DetachedInstanceError even though the row had been persisted.
+    """
+
+    default_factory = sessionmaker(bind=engine)
+    assert default_factory.kw.get("expire_on_commit", True) is True
+    repository = PostgresApprovalRepository(default_factory)
+    overrides = {"approval_id": str(uuid4())} if supplied_id else {}
+
+    created = _create(repository, **overrides)
+    approval_id = created.approval.approval_id
+
+    if supplied_id:
+        assert approval_id == overrides["approval_id"]
+    assert _row_count(engine, approval_id) == 1
+    with engine.connect() as connection:
+        stored_id = connection.execute(
+            text("SELECT approval_id FROM approval_requests WHERE approval_id = :approval_id"),
+            {"approval_id": approval_id},
+        ).scalar_one()
+    assert stored_id == approval_id
+    assert created.approval.payload == PAYMENT_PAYLOAD
+    assert created.payload_hash == canonical_payload_hash(PAYMENT_PAYLOAD)
+
+    fresh = PostgresApprovalRepository(sessionmaker(bind=independent_engine))
+    assert fresh.get(approval_id) == created
+    assert approval_id in {
+        record.approval.approval_id for record in fresh.list_by_status("pending")
+    }
+    assert fresh.list_decisions(approval_id) == ()
