@@ -1,9 +1,10 @@
-"""PostgreSQL-backed durable approval repository: create and read operations.
+"""PostgreSQL-backed durable approval repository.
 
-Slice D2 scope: requests are created and read back, and reviewer decisions are read as
-immutable records. Recording decisions, quorum transitions and expiry belong to later
-slices, so this repository intentionally exposes no update or delete operation. It is
-not yet wired into the approval service or payment execution.
+Requests are created and read back (Slice D2), and verified human reviewers record
+approve or reject decisions atomically with the resulting quorum transition (Slice D3).
+There is no generic update or delete operation, and expiry transitions belong to a later
+slice. The repository is not yet wired into the approval service, and it never calls a
+payment provider: reaching quorum only marks the request ``approved``.
 
 The database is the single source of truth. ``ApprovalRequest.reviewer_ids`` and
 ``review_count`` are derived from the append-only ``approval_decisions`` rows rather
@@ -12,13 +13,14 @@ than stored separately.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast, get_args
+from typing import Any, Literal, cast, get_args
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import DataError, IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.approvals.integrity import (
@@ -27,6 +29,8 @@ from app.approvals.integrity import (
     canonical_payload_json,
 )
 from app.approvals.models import ApprovalRequest, ApprovalStatus
+from app.approvals.reviewer import VerifiedReviewer, normalize_trusted_issuers
+from app.auth.oidc import OperatorIdentity
 from app.infrastructure.health import InfrastructureUnavailableError
 from app.storage.database import SessionFactory
 from app.storage.models import ApprovalDecisionModel, ApprovalRequestModel
@@ -34,6 +38,11 @@ from app.storage.models import ApprovalDecisionModel, ApprovalRequestModel
 SUPPORTED_APPROVAL_STATUSES: frozenset[str] = frozenset(get_args(ApprovalStatus))
 UNIQUE_VIOLATION_SQLSTATE = "23505"
 STORAGE_UNAVAILABLE_MESSAGE = "Approval storage is unavailable."
+DECISION_LOCK_TIMEOUT = "5s"
+"""Maximum wait for the approval row lock before the decision fails as unavailable."""
+
+DecisionValue = Literal["approve", "reject"]
+DecisionOutcomeStatus = Literal["partially_approved", "approved", "rejected"]
 
 
 class ApprovalPersistenceError(ValueError):
@@ -50,6 +59,22 @@ class ApprovalRequestNotFoundError(LookupError):
 
 class ApprovalIntegrityError(RuntimeError):
     """Raised when a stored payment payload no longer matches its recorded hash."""
+
+
+class ApprovalDecisionRejectedError(ValueError):
+    """Base class for decisions refused because of the approval request's state."""
+
+
+class ApprovalNotPendingError(ApprovalDecisionRejectedError):
+    """Raised when the approval request is already approved, rejected or expired."""
+
+
+class ApprovalExpiredError(ApprovalDecisionRejectedError):
+    """Raised when a pending approval request has passed its expiry time."""
+
+
+class DuplicateReviewerDecisionError(ApprovalDecisionRejectedError):
+    """Raised when the reviewer (issuer + subject) already decided this approval."""
 
 
 class ApprovalDecisionRecord(BaseModel):
@@ -95,8 +120,17 @@ class DurableApprovalRecord(BaseModel):
     decisions: tuple[ApprovalDecisionRecord, ...]
 
 
+@dataclass(frozen=True)
+class DecisionOutcome:
+    """Result of an accepted reviewer decision, read inside the deciding transaction."""
+
+    status: DecisionOutcomeStatus
+    record: DurableApprovalRecord
+    decision: ApprovalDecisionRecord
+
+
 class PostgresApprovalRepository:
-    """Create and read durable approval requests.
+    """Durable approval requests and reviewer decisions.
 
     Not-found behaviour:
 
@@ -109,8 +143,21 @@ class PostgresApprovalRepository:
     PostgreSQL transaction repository.
     """
 
-    def __init__(self, session_factory: SessionFactory) -> None:
+    def __init__(
+        self,
+        session_factory: SessionFactory,
+        *,
+        trusted_reviewer_issuers: frozenset[str] | set[str] | None = None,
+    ) -> None:
+        """Create the repository.
+
+        ``trusted_reviewer_issuers`` lists the OIDC issuers whose verified tokens may
+        record decisions (normally just ``OIDC_ISSUER``). It defaults to empty, so
+        decisions are refused until issuers are configured explicitly (fail closed).
+        """
+
         self._session_factory = session_factory
+        self._trusted_reviewer_issuers = normalize_trusted_issuers(trusted_reviewer_issuers)
 
     def create(
         self,
@@ -223,6 +270,168 @@ class PostgresApprovalRepository:
         except SQLAlchemyError as exc:
             raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
 
+    def record_decision(
+        self,
+        approval_id: str,
+        *,
+        reviewer: OperatorIdentity,
+        decision: DecisionValue,
+        comment: str | None = None,
+        correlation_id: str | None = None,
+    ) -> DecisionOutcome:
+        """Atomically record one reviewer decision and apply the quorum transition.
+
+        In a single READ COMMITTED transaction this:
+
+        1. verifies the reviewer (verified human, approver role, trusted issuer);
+        2. locks the approval row with ``SELECT ... FOR UPDATE`` so concurrent decisions
+           on the same approval serialize in the database, across processes and workers;
+        3. re-checks payload integrity, ``pending`` status and expiry (database clock);
+        4. refuses a second decision by the same issuer + subject, including
+           approve-then-reject;
+        5. inserts the decision bound to the request's stored payload hash;
+        6. derives the approval count from persisted decision rows, then advances
+           ``version`` by exactly one and sets ``approved`` (quorum reached),
+           ``rejected`` (any valid rejection is terminal), or leaves ``pending``.
+
+        Any failure rolls the whole transaction back: no decision row without its state
+        transition, and no transition without its decision. Refused decisions raise
+        ``ReviewerNotEligibleError``, ``ApprovalRequestNotFoundError`` or an
+        ``ApprovalDecisionRejectedError`` subclass and change nothing. No payment
+        provider is called.
+        """
+
+        if decision not in ("approve", "reject"):
+            raise ValueError(f"Unsupported decision: {decision!r}")
+        verified = VerifiedReviewer.from_identity(
+            reviewer,
+            trusted_issuers=self._trusted_reviewer_issuers,
+        )
+
+        try:
+            with self._session_factory() as session, session.begin():
+                # Pin READ COMMITTED for this transaction: after waiting on the row lock,
+                # each statement must see decisions committed by the previous lock holder.
+                session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+                session.execute(text(f"SET LOCAL lock_timeout = '{DECISION_LOCK_TIMEOUT}'"))
+                return self._record_decision_locked(
+                    session,
+                    approval_id,
+                    reviewer=verified,
+                    decision=decision,
+                    comment=comment,
+                    correlation_id=correlation_id,
+                )
+        except IntegrityError as exc:
+            if getattr(exc.orig, "sqlstate", None) == UNIQUE_VIOLATION_SQLSTATE:
+                raise DuplicateReviewerDecisionError(
+                    "Reviewer has already decided this approval request."
+                ) from exc
+            raise ApprovalPersistenceError(
+                "Approval decision violates a persistence constraint."
+            ) from exc
+        except DataError as exc:
+            raise ApprovalPersistenceError("Approval decision data is invalid.") from exc
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
+
+    def _record_decision_locked(
+        self,
+        session: Session,
+        approval_id: str,
+        *,
+        reviewer: VerifiedReviewer,
+        decision: DecisionValue,
+        comment: str | None,
+        correlation_id: str | None,
+    ) -> DecisionOutcome:
+        model = session.scalars(
+            select(ApprovalRequestModel)
+            .where(ApprovalRequestModel.approval_id == approval_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).one_or_none()
+        if model is None:
+            raise ApprovalRequestNotFoundError("Approval request not found.")
+
+        _verify_payload_integrity(model)
+        if model.status != "pending":
+            raise ApprovalNotPendingError("Approval request is no longer pending.")
+        # clock_timestamp(), not now(): now() is the transaction start time, which may be
+        # well before this point if the transaction waited for the row lock.
+        database_now = session.execute(select(func.clock_timestamp())).scalar_one()
+        if database_now >= model.expires_at:
+            raise ApprovalExpiredError("Approval request has expired.")
+
+        # The row lock serializes every decision on this approval, and READ COMMITTED
+        # gives this statement a snapshot that includes all previously committed ones.
+        existing = _load_decisions(session, approval_id)
+        if any(
+            row.reviewer_issuer == reviewer.issuer and row.reviewer_subject == reviewer.subject
+            for row in existing
+        ):
+            raise DuplicateReviewerDecisionError(
+                "Reviewer has already decided this approval request."
+            )
+
+        decision_id = str(uuid4())
+        session.add(
+            ApprovalDecisionModel(
+                decision_id=decision_id,
+                approval_id=approval_id,
+                payload_hash=model.payload_hash,
+                decision=decision,
+                reviewer_issuer=reviewer.issuer,
+                reviewer_subject=reviewer.subject,
+                reviewer_email=reviewer.email,
+                reviewer_display_name=reviewer.display_name,
+                reviewer_roles=list(reviewer.roles),
+                authentication_method=reviewer.authentication_method,
+                principal_type=reviewer.principal_type,
+                comment=comment,
+                correlation_id=correlation_id,
+                decided_at=database_now,
+            )
+        )
+        session.flush()
+
+        approvals = sum(1 for row in existing if row.decision == "approve")
+        if decision == "approve":
+            approvals += 1
+        status: DecisionOutcomeStatus
+        new_values: dict[str, Any] = {"version": model.version + 1}
+        if decision == "reject":
+            status = "rejected"
+            new_values.update(status="rejected", resolved_at=database_now)
+        elif approvals >= model.required_reviewers:
+            status = "approved"
+            new_values.update(status="approved", resolved_at=database_now)
+        else:
+            status = "partially_approved"
+
+        result = session.execute(
+            update(ApprovalRequestModel)
+            .where(
+                ApprovalRequestModel.approval_id == approval_id,
+                ApprovalRequestModel.version == model.version,
+                ApprovalRequestModel.status == "pending",
+            )
+            .values(**new_values)
+            .execution_options(synchronize_session=False)
+        )
+        if getattr(result, "rowcount", 0) != 1:  # pragma: no cover - guarded by row lock
+            raise ApprovalPersistenceError("Approval request changed during the decision.")
+
+        refreshed = session.scalars(
+            select(ApprovalRequestModel)
+            .where(ApprovalRequestModel.approval_id == approval_id)
+            .execution_options(populate_existing=True)
+        ).one()
+        decisions = _load_decisions(session, approval_id)
+        record = _to_record(refreshed, decisions)
+        recorded = next(row for row in decisions if row.decision_id == decision_id)
+        return DecisionOutcome(status=status, record=record, decision=recorded)
+
 
 def _require_aware_utc(value: datetime, field: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
@@ -257,15 +466,19 @@ def _load_decisions(session: Session, approval_id: str) -> tuple[ApprovalDecisio
     )
 
 
-def _to_record(
-    model: ApprovalRequestModel,
-    decisions: tuple[ApprovalDecisionRecord, ...],
-) -> DurableApprovalRecord:
+def _verify_payload_integrity(model: ApprovalRequestModel) -> None:
     if (
         model.payload_hash_algorithm != PAYLOAD_HASH_ALGORITHM
         or canonical_payload_hash(model.payment_payload) != model.payload_hash
     ):
         raise ApprovalIntegrityError("Stored payment payload does not match its hash.")
+
+
+def _to_record(
+    model: ApprovalRequestModel,
+    decisions: tuple[ApprovalDecisionRecord, ...],
+) -> DurableApprovalRecord:
+    _verify_payload_integrity(model)
 
     if model.status not in SUPPORTED_APPROVAL_STATUSES:
         raise ApprovalIntegrityError("Stored approval status is not supported.")

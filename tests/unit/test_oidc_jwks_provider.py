@@ -277,3 +277,35 @@ def encode_number(number: int) -> str:
     return base64url_encode(number.to_bytes((number.bit_length() + 7) // 8, "big")).decode(
         "ascii"
     )
+
+
+def test_verified_identity_carries_token_issuer() -> None:
+    key_pair = create_key_pair(kid="key-issuer-claim")
+    provider = build_provider(key_pair=key_pair)
+    token = create_token(key_pair=key_pair, groups=["finance_approvers"])
+
+    identity = provider.authenticate(token)
+
+    assert identity is not None
+    assert identity.authentication_method == "oidc_jwks"
+    assert identity.issuer == ISSUER
+
+
+def test_token_without_issuer_claim_rejected() -> None:
+    key_pair = create_key_pair(kid="key-no-iss")
+    provider = build_provider(key_pair=key_pair)
+    now = datetime.now(UTC)
+    token = jwt.encode(
+        {
+            "aud": AUDIENCE,
+            "sub": "operator-subject",
+            "groups": ["finance_approvers"],
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        key_pair["private_key"],
+        algorithm="RS256",
+        headers={"kid": key_pair["kid"]},
+    )
+
+    assert provider.authenticate(token) is None
