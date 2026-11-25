@@ -344,6 +344,115 @@ def test_claim_token_is_required_and_never_stored(
     assert len(evidence.list_evidence(claim.claim.claim_id)) == 2
 
 
+# Missing, non-string and wrong ownership proofs (built at runtime, never hard-coded).
+UNOWNED_PROOFS: tuple[Any, ...] = (None, 7, b"bytes", ["list"], {"k": "v"}, "")
+
+
+def _wrong_proof() -> str:
+    return str(uuid4())
+
+
+@pytest.mark.parametrize("proof", [*UNOWNED_PROOFS, _wrong_proof()], ids=repr)
+def test_worker_evidence_requires_a_valid_claim_token(
+    approvals: PostgresApprovalRepository,
+    claims: PostgresExecutionClaimRepository,
+    evidence: PostgresExecutionEvidenceRepository,
+    engine: Engine,
+    proof: Any,
+) -> None:
+    claim = _claimed(approvals, claims)
+    owner = claim.claim_token
+    attempt = evidence.record_attempt(claim.claim.claim_id, claim_token=owner)
+
+    # Nothing is written before submission_started exists, and nothing after it either.
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_submission_started(attempt.attempt_id, claim_token=proof)
+    assert _rows(engine, "payment_execution_evidence", claim.claim.claim_id) == []
+
+    evidence.record_submission_started(attempt.attempt_id, claim_token=owner)
+    baseline = _rows(engine, "payment_execution_evidence", claim.claim.claim_id)
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_submission_started(attempt.attempt_id, claim_token=proof)
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_outcome_unknown(attempt.attempt_id, claim_token=proof, reason="timeout")
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_provider_observation(
+            attempt.attempt_id,
+            source="provider_initiation_response",
+            observation_key="initiation",
+            result_code="0",
+            claim_token=proof,
+        )
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_attempt(claim.claim.claim_id, claim_token=proof)
+    assert _rows(engine, "payment_execution_evidence", claim.claim.claim_id) == baseline
+
+    # The owner's token still records the intended worker evidence.
+    unknown = evidence.record_outcome_unknown(
+        attempt.attempt_id,
+        claim_token=owner,
+        reason="timeout",
+    )
+    initiation = evidence.record_provider_observation(
+        attempt.attempt_id,
+        source="provider_initiation_response",
+        observation_key="initiation",
+        result_code="0",
+        claim_token=owner,
+    )
+    assert unknown.created and initiation.created
+    assert [row.sequence for row in evidence.list_evidence(claim.claim.claim_id)] == [1, 2, 3]
+
+
+def test_initiation_response_without_token_fails_closed(
+    approvals: PostgresApprovalRepository,
+    claims: PostgresExecutionClaimRepository,
+    evidence: PostgresExecutionEvidenceRepository,
+) -> None:
+    claim = _claimed(approvals, claims)
+    attempt = _submitted(evidence, claim)
+
+    with pytest.raises(ClaimOwnershipError):
+        evidence.record_provider_observation(
+            attempt.attempt_id,
+            source="provider_initiation_response",
+            observation_key="initiation",
+            result_code="0",
+        )
+    assert len(evidence.list_evidence(claim.claim.claim_id)) == 1
+
+
+@pytest.mark.parametrize("source", ["provider_callback", "provider_status_query"])
+def test_callback_and_status_query_observations_need_no_token(
+    approvals: PostgresApprovalRepository,
+    claims: PostgresExecutionClaimRepository,
+    evidence: PostgresExecutionEvidenceRepository,
+    source: Any,
+) -> None:
+    claim = _claimed(approvals, claims)
+    attempt = _submitted(evidence, claim)
+
+    observed = evidence.record_provider_observation(
+        attempt.attempt_id, source=source, observation_key="obs-1", result_code="0"
+    )
+    replay = evidence.record_provider_observation(
+        attempt.attempt_id, source=source, observation_key="obs-1", result_code="0"
+    )
+    with pytest.raises(InvalidEvidenceError):
+        evidence.record_provider_observation(
+            attempt.attempt_id,
+            source=source,
+            observation_key="obs-2",
+            result_code="0",
+            claim_token=claim.claim_token,
+        )
+
+    assert observed.created is True and replay.created is False
+    assert observed.evidence.evidence_source == source
+    assert observed.evidence.verification_level == "unverified"
+    assert len(evidence.list_evidence(claim.claim.claim_id)) == 2
+
+
 def test_unknown_claims_and_attempts_are_refused(
     evidence: PostgresExecutionEvidenceRepository,
 ) -> None:
@@ -409,7 +518,6 @@ def test_evidence_requires_submission_started_first(
         pytest.param({"source": "provider_verified"}, id="unknown-source"),
         pytest.param({"source": "execution_worker"}, id="worker-source"),
         pytest.param({"claim_token": "token"}, id="token-on-callback"),
-        pytest.param({"source": "provider_initiation_response"}, id="initiation-without-token"),
     ],
 )
 def test_invalid_observations_are_refused(

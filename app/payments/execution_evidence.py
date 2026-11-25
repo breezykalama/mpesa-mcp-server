@@ -80,6 +80,10 @@ AttemptStage = Literal[
 ]
 
 PROVIDER_OBSERVATION_SOURCES: frozenset[str] = frozenset(get_args(ProviderObservationSource))
+OWNER_VERIFIED_SOURCES: frozenset[str] = frozenset(
+    {"execution_worker", "provider_initiation_response"}
+)
+"""Sources only the claim owner can observe; their evidence always requires the token."""
 UNCERTAINTY_REASONS: frozenset[str] = frozenset(get_args(UncertaintyReason))
 UNVERIFIED: VerificationLevel = "unverified"
 DEFAULT_PROVIDER = "daraja"
@@ -283,7 +287,8 @@ class PostgresExecutionEvidenceRepository:
 
         if source not in PROVIDER_OBSERVATION_SOURCES:
             raise InvalidEvidenceError(f"Unsupported observation source: {source!r}")
-        if (source == "provider_initiation_response") != (claim_token is not None):
+        # The initiation response's token is verified (and required) in ``_append``.
+        if source not in OWNER_VERIFIED_SOURCES and claim_token is not None:
             raise InvalidEvidenceError(
                 "Only the provider initiation response is recorded with the claim token."
             )
@@ -437,11 +442,15 @@ class PostgresExecutionEvidenceRepository:
         ).one_or_none()
         if attempt is None:
             raise ExecutionAttemptNotFoundError("Execution attempt not found.")
-        if claim_token is not None:
+        # Ownership is required by the evidence's provenance, never by whether a token
+        # happened to be supplied: a missing (None) or non-string token fails closed.
+        if evidence_source in OWNER_VERIFIED_SOURCES:
             claim = session.get(PaymentExecutionClaimModel, attempt.claim_id)
             if claim is None:  # pragma: no cover - guaranteed by the foreign key
                 raise ExecutionClaimNotFoundError("Execution claim not found.")
             _verify_claim_token(claim, claim_token)
+        elif claim_token is not None:
+            raise InvalidEvidenceError("Only claim-owner evidence is recorded with the token.")
 
         content = {
             "evidence_type": evidence_type,
@@ -545,7 +554,7 @@ def assess_attempt(
     return AttemptAssessment(stage=stage, observed_result_codes=codes, conflicting=conflicting)
 
 
-def _verify_claim_token(claim: PaymentExecutionClaimModel, claim_token: str) -> None:
+def _verify_claim_token(claim: PaymentExecutionClaimModel, claim_token: object) -> None:
     if not isinstance(claim_token, str) or not compare_digest(
         claim_token_hash(claim_token), claim.claim_token_hash
     ):
