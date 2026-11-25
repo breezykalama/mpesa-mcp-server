@@ -15,7 +15,8 @@ Declarative guarantees (all dialects):
 On PostgreSQL the migration also installs guard triggers:
 
 * a claim can only be inserted for an approval whose persisted status is ``approved``
-  (``approved`` is terminal, so the invariant holds for the claim's lifetime);
+  and whose action is a supported payment execution action (``initiate_stk_push``);
+  both are immutable once approved, so the invariant holds for the claim's lifetime;
 * claim identity, approval binding, token hash, worker attribution and creation time
   are immutable;
 * claims cannot be deleted or truncated.
@@ -33,19 +34,31 @@ down_revision = "0008_durable_approvals"
 branch_labels = None
 depends_on = None
 
+EXECUTABLE_PAYMENT_ACTIONS = ("initiate_stk_push",)
+"""Mirrors ``app.payments.execution_claims.EXECUTABLE_PAYMENT_ACTIONS`` (tested)."""
+
+_ACTION_LIST_SQL = ", ".join(f"'{action}'" for action in EXECUTABLE_PAYMENT_ACTIONS)
+
 POSTGRES_GUARD_FUNCTIONS = (
-    """
+    f"""
     CREATE FUNCTION payment_execution_claims_require_approved() RETURNS trigger
     LANGUAGE plpgsql AS $$
     DECLARE
         approval_status text;
+        approval_action text;
     BEGIN
-        SELECT status INTO approval_status
+        SELECT status, action INTO approval_status, approval_action
         FROM approval_requests
         WHERE approval_id = NEW.approval_id;
 
         IF approval_status IS DISTINCT FROM 'approved' THEN
             RAISE EXCEPTION 'approval request % is not approved and cannot be claimed',
+                NEW.approval_id
+                USING ERRCODE = 'restrict_violation';
+        END IF;
+
+        IF approval_action IS NULL OR approval_action NOT IN ({_ACTION_LIST_SQL}) THEN
+            RAISE EXCEPTION 'approval request % is not a payment execution action',
                 NEW.approval_id
                 USING ERRCODE = 'restrict_violation';
         END IF;

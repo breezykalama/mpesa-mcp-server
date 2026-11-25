@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib.util
 import os
 import subprocess
 import sys
@@ -43,12 +44,14 @@ from app.infrastructure.health import InfrastructureUnavailableError
 from app.main import app
 from app.payments import execution_claims
 from app.payments.execution_claims import (
+    EXECUTABLE_PAYMENT_ACTIONS,
     ApprovalNotApprovedError,
     ApprovalQuorumNotMetError,
     ClaimOutcome,
     ExecutionAlreadyClaimedError,
     ExecutionClaimRecord,
     PostgresExecutionClaimRepository,
+    UnsupportedExecutionActionError,
     claim_token_hash,
 )
 from app.payments.providers import DarajaPaymentProvider
@@ -140,11 +143,12 @@ def _create(
     *,
     required_reviewers: int = 1,
     expires_in: timedelta = timedelta(minutes=30),
+    action: str = "initiate_stk_push",
 ) -> str:
     with approvals._session_factory() as session:  # noqa: SLF001 - database clock
         now = session.execute(text("SELECT clock_timestamp()")).scalar_one()
     record = approvals.create(
-        action="initiate_stk_push",
+        action=action,
         payload=PAYMENT_PAYLOAD,
         reason="High-value payment requires approval",
         created_at=now - timedelta(hours=2),
@@ -511,6 +515,79 @@ def test_forged_approval_with_one_of_two_required_humans_cannot_be_claimed(
         claims.claim_execution(approval_id)
 
     assert _claim_rows(engine, approval_id) == []
+
+
+NON_PAYMENT_ACTIONS = (
+    # Existing read-only actions from the safety policy.
+    "check_transaction_status",
+    "get_today_transactions",
+    "get_failed_transactions",
+    "generate_receipt",
+    # An MCP tool name, not an approval action: the tool delegates to initiate_stk_push.
+    "initiate_payment",
+    # Unknown, administrative and near-miss spellings.
+    "refund_payment",
+    "admin_override",
+    "INITIATE_STK_PUSH",
+    "initiate_stk_push ",
+    "initiate_stk_push_v2",
+)
+
+
+def test_only_the_existing_payment_action_is_executable() -> None:
+    assert EXECUTABLE_PAYMENT_ACTIONS == frozenset({"initiate_stk_push"})
+    assert not EXECUTABLE_PAYMENT_ACTIONS & set(NON_PAYMENT_ACTIONS)
+
+
+@pytest.mark.parametrize("action", NON_PAYMENT_ACTIONS)
+def test_approved_non_payment_action_cannot_be_claimed(
+    approvals: PostgresApprovalRepository,
+    claims: PostgresExecutionClaimRepository,
+    engine: Engine,
+    no_payment_provider: list[str],
+    action: str,
+) -> None:
+    approval_id = _create(approvals, action=action)
+    _approve(approvals, approval_id, 1)
+    record = approvals.get(approval_id)
+    assert record is not None
+    assert record.approval.status == "approved"
+    before = _approval_snapshot(engine, approval_id)
+
+    with pytest.raises(UnsupportedExecutionActionError):
+        claims.claim_execution(approval_id)
+
+    assert _claim_rows(engine, approval_id) == []
+    assert _approval_snapshot(engine, approval_id) == before
+    assert no_payment_provider == []
+
+
+def test_database_refuses_claims_for_non_payment_actions(
+    approvals: PostgresApprovalRepository,
+    engine: Engine,
+) -> None:
+    approval_id = _create(approvals, action="generate_receipt")
+    _approve(approvals, approval_id, 1)
+
+    _assert_rejected(
+        RESTRICT_VIOLATION,
+        engine,
+        RAW_CLAIM_INSERT,
+        **_raw_claim(approval_id, canonical_payload_hash(PAYMENT_PAYLOAD)),
+    )
+    assert _claim_rows(engine, approval_id) == []
+
+
+def test_migration_action_allowlist_matches_the_repository() -> None:
+    migration_path = (
+        REPOSITORY_ROOT / "alembic" / "versions" / "0009_create_payment_execution_claims.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0009", migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert frozenset(migration.EXECUTABLE_PAYMENT_ACTIONS) == EXECUTABLE_PAYMENT_ACTIONS
+    assert "'initiate_stk_push'" in migration.POSTGRES_GUARD_FUNCTIONS[0]
 
 
 def test_tampered_payload_cannot_be_claimed(

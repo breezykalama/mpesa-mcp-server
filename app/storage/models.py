@@ -276,7 +276,7 @@ class PaymentExecutionClaimModel(Base):
     approval's stored payload hash. Only a SHA-256 hash of the claim token is stored.
     Execution state is kept here, never in ``approval_requests``. On PostgreSQL,
     migration ``0009_payment_execution_claims`` installs triggers that refuse claims
-    for approvals that are not ``approved``, keep claim identity, binding and
+    for approvals that are not ``approved`` payment actions, keep claim identity, binding and
     attribution immutable, and reject deletion.
     """
 

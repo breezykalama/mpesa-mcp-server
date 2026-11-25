@@ -39,6 +39,7 @@ from app.approvals.postgres_repository import (
     _verify_payload_integrity,
 )
 from app.infrastructure.health import InfrastructureUnavailableError
+from app.safety.policy import INITIATE_STK_PUSH
 from app.storage.database import SessionFactory
 from app.storage.models import (
     ApprovalDecisionModel,
@@ -49,6 +50,15 @@ from app.storage.models import (
 CLAIM_TOKEN_BYTES = 32
 """Entropy of the claim (fencing) token returned to the winning worker only."""
 INITIAL_CLAIM_STATUS = "claimed"
+EXECUTABLE_PAYMENT_ACTIONS: frozenset[str] = frozenset({INITIATE_STK_PUSH})
+"""Approval actions that represent a payment the provider executes.
+
+Reuses the safety policy's action vocabulary: ``initiate_stk_push`` is the only
+payment-initiating action, and it is the only action ``PaymentService`` records on
+approval requests (both MCP payment tools delegate to it). Read-only, unknown or
+any other approved action never receives an execution claim. Migration
+``0009_payment_execution_claims`` enforces the same set on insert.
+"""
 COUNTED_AUTHENTICATION_METHODS = frozenset({"oidc_jwks"})
 """Only IdP-verified decisions count towards quorum at claim time (matches D3)."""
 MAX_WORKER_ID_LENGTH = 255
@@ -64,6 +74,10 @@ class ApprovalNotApprovedError(ExecutionClaimRefusedError):
     def __init__(self, status: str) -> None:
         super().__init__(f"Approval request is {status}, not approved.")
         self.status = status
+
+
+class UnsupportedExecutionActionError(ExecutionClaimRefusedError):
+    """Raised when the approved action is not a supported payment execution action."""
 
 
 class ApprovalQuorumNotMetError(ExecutionClaimRefusedError):
@@ -137,7 +151,8 @@ class PostgresExecutionClaimRepository:
            decisions and D4.3 expiry take), so concurrent claimers serialize in the
            database across processes and workers;
         2. verifies the request exists and its stored payload matches its hash;
-        3. requires persisted status ``approved``;
+        3. requires a supported payment action (``EXECUTABLE_PAYMENT_ACTIONS``) and
+           persisted status ``approved``;
         4. re-derives quorum from persisted decisions: no rejection, and at least
            ``required_reviewers`` distinct verified human approvals bound to the stored
            payload hash;
@@ -194,6 +209,10 @@ class PostgresExecutionClaimRepository:
             raise ApprovalRequestNotFoundError("Approval request not found.")
 
         _verify_payload_integrity(approval)
+        if approval.action not in EXECUTABLE_PAYMENT_ACTIONS:
+            raise UnsupportedExecutionActionError(
+                "Approved action is not a supported payment execution action."
+            )
         if approval.status != "approved":
             raise ApprovalNotApprovedError(approval.status)
         _verify_quorum(session, approval)
