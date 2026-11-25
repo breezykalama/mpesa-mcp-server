@@ -245,7 +245,9 @@ def test_attempt_and_evidence_are_bound_to_the_claim(
     before = _database_now(engine)
 
     attempt = evidence.record_attempt(
-        claim.claim.claim_id, claim_token=claim.claim_token, correlation_id="corr-e2"
+        claim.claim.claim_id,
+        claim_token=claim.claim_token,
+        correlation_id="corr-e2",
     )
     started = evidence.record_submission_started(attempt.attempt_id, claim_token=claim.claim_token)
     initiation = evidence.record_provider_observation(
@@ -386,7 +388,9 @@ def test_evidence_requires_submission_started_first(
         _callback(evidence, attempt.attempt_id)
     with pytest.raises(SubmissionNotStartedError):
         evidence.record_outcome_unknown(
-            attempt.attempt_id, claim_token=claim.claim_token, reason="timeout"
+            attempt.attempt_id,
+            claim_token=claim.claim_token,
+            reason="timeout",
         )
     assert evidence.list_evidence(claim.claim.claim_id) == ()
     assert evidence.assess(claim.claim.claim_id).stage == "attempt_recorded"
@@ -465,7 +469,9 @@ def test_conflicting_duplicate_is_refused_and_original_kept(
     attempt = _submitted(evidence, claim)
     original = _callback(evidence, attempt.attempt_id, result_code="1032")
     evidence.record_outcome_unknown(
-        attempt.attempt_id, claim_token=claim.claim_token, reason="timeout"
+        attempt.attempt_id,
+        claim_token=claim.claim_token,
+        reason="timeout",
     )
 
     with pytest.raises(ConflictingEvidenceError):
@@ -474,7 +480,9 @@ def test_conflicting_duplicate_is_refused_and_original_kept(
         _callback(evidence, attempt.attempt_id, result_code="1032", provider_transaction_id="R")
     with pytest.raises(ConflictingEvidenceError):
         evidence.record_outcome_unknown(
-            attempt.attempt_id, claim_token=claim.claim_token, reason="connection_error"
+            attempt.attempt_id,
+            claim_token=claim.claim_token,
+            reason="connection_error",
         )
 
     rows = evidence.list_evidence(claim.claim.claim_id)
@@ -533,7 +541,9 @@ def test_uncertain_and_unverified_outcomes_are_never_confirmed(
     evidence.record_submission_started(attempt.attempt_id, claim_token=claim.claim_token)
     stages.append(evidence.assess(claim_id))
     evidence.record_outcome_unknown(
-        attempt.attempt_id, claim_token=claim.claim_token, reason="timeout"
+        attempt.attempt_id,
+        claim_token=claim.claim_token,
+        reason="timeout",
     )
     stages.append(evidence.assess(claim_id))
     # A "success" result code from an unverified callback is still only an observation.
@@ -683,7 +693,9 @@ def test_evidence_never_modifies_approval_or_claim_and_e1_uniqueness_holds(
 
     attempt = _submitted(evidence, claim)
     evidence.record_outcome_unknown(
-        attempt.attempt_id, claim_token=claim.claim_token, reason="timeout"
+        attempt.attempt_id,
+        claim_token=claim.claim_token,
+        reason="timeout",
     )
     _callback(evidence, attempt.attempt_id)
 
@@ -708,7 +720,9 @@ def test_attempt_and_evidence_survive_restart(
 ) -> None:
     claim = _claimed(approvals, claims)
     attempt = evidence.record_attempt(
-        claim.claim.claim_id, claim_token=claim.claim_token, correlation_id="corr-restart"
+        claim.claim.claim_id,
+        claim_token=claim.claim_token,
+        correlation_id="corr-restart",
     )
     evidence.record_submission_started(attempt.attempt_id, claim_token=claim.claim_token)
     recorded = evidence.list_evidence(claim.claim.claim_id)
@@ -790,7 +804,9 @@ def test_database_rejection_rolls_back(
 
     with pytest.raises(InvalidEvidenceError):
         evidence.record_attempt(
-            claim.claim.claim_id, claim_token=claim.claim_token, correlation_id="x" * 129
+            claim.claim.claim_id,
+            claim_token=claim.claim_token,
+            correlation_id="x" * 129,
         )
 
     assert _rows(engine, "payment_execution_attempts", claim.claim.claim_id) == []
@@ -1038,7 +1054,9 @@ def test_recording_evidence_never_calls_a_payment_provider(
     claim = _claimed(approvals, claims)
     attempt = _submitted(evidence, claim)
     evidence.record_outcome_unknown(
-        attempt.attempt_id, claim_token=claim.claim_token, reason="timeout"
+        attempt.attempt_id,
+        claim_token=claim.claim_token,
+        reason="timeout",
     )
     _callback(evidence, attempt.attempt_id)
     evidence.assess(claim.claim.claim_id)
