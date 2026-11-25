@@ -267,3 +267,55 @@ class ApprovalDecisionModel(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+
+
+class PaymentExecutionClaimModel(Base):
+    """Durable claim granting one internal worker the right to execute one approval.
+
+    Exactly one claim may exist per approval, bound by composite foreign key to the
+    approval's stored payload hash. Only a SHA-256 hash of the claim token is stored.
+    Execution state is kept here, never in ``approval_requests``. On PostgreSQL,
+    migration ``0009_payment_execution_claims`` installs triggers that refuse claims
+    for approvals that are not ``approved`` payment actions, keep claim identity, binding and
+    attribution immutable, and reject deletion.
+    """
+
+    __tablename__ = "payment_execution_claims"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["approval_id", "payload_hash"],
+            ["approval_requests.approval_id", "approval_requests.payload_hash"],
+            name="fk_payment_execution_claims_approval_payload_hash",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("approval_id", name="uq_payment_execution_claims_approval_id"),
+        UniqueConstraint(
+            "claim_token_hash",
+            name="uq_payment_execution_claims_claim_token_hash",
+        ),
+        CheckConstraint(
+            "status IN ('claimed')",
+            name="ck_payment_execution_claims_status_allowed",
+        ),
+        CheckConstraint(
+            "length(claim_token_hash) = 64 AND claim_token_hash = lower(claim_token_hash)",
+            name="ck_payment_execution_claims_token_hash_format",
+        ),
+        CheckConstraint(
+            "length(claimed_by) > 0",
+            name="ck_payment_execution_claims_claimed_by_not_empty",
+        ),
+    )
+
+    claim_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    claim_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
