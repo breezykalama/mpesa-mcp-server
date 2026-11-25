@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.analytics.service import AnalyticsService
+from app.approvals.durable_store import DurableApprovalStore
 from app.approvals.repository import InMemoryApprovalRepository
 from app.approvals.service import ApprovalService
 from app.audit.logger import InMemoryAuditLogger
@@ -74,6 +75,13 @@ class AppContainer:
     receipt_service: ReceiptService
     analytics_service: AnalyticsService
     reconciliation_service: ReconciliationService
+    durable_approval_store: DurableApprovalStore | None = None
+    """Shared PostgreSQL approval creation/retrieval (``STORAGE_MODE=postgres`` only).
+
+    Isolated and non-executing: no live service receives it, it exposes no decision
+    operation, and the live in-memory approval workflow is unchanged. See
+    ``app.approvals.durable_store``.
+    """
 
     @classmethod
     def mock(cls, settings: Settings | None = None) -> AppContainer:
@@ -86,6 +94,11 @@ class AppContainer:
             session_factory,
         )
         approval_repository = InMemoryApprovalRepository()
+        durable_approval_store = (
+            DurableApprovalStore.from_settings(resolved_settings, session_factory)
+            if session_factory is not None
+            else None
+        )
         audit_repository = cls._create_audit_repository(resolved_settings, session_factory)
         audit_logger = InMemoryAuditLogger(repository=audit_repository)
         metrics_recorder = InMemoryMetricsRecorder()
@@ -156,6 +169,7 @@ class AppContainer:
                 payment_provider=payment_provider,
                 stale_pending_minutes=resolved_settings.reconciliation_stale_pending_minutes,
             ),
+            durable_approval_store=durable_approval_store,
         )
 
     @classmethod

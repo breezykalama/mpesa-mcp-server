@@ -611,8 +611,25 @@ class ApprovalService:
         )
 
     def _required_reviewers_for_payload(self, payload: dict[str, Any]) -> int:
-        amount = payload.get("amount")
-        if isinstance(amount, int) and amount >= self._high_risk_amount_threshold:
-            return self._high_risk_required_reviewers
+        return required_reviewers_for_payload(
+            payload,
+            required_reviewers=self._required_reviewers,
+            high_risk_required_reviewers=self._high_risk_required_reviewers,
+            high_risk_amount_threshold=self._high_risk_amount_threshold,
+        )
 
-        return self._required_reviewers
+
+def required_reviewers_for_payload(
+    payload: dict[str, Any],
+    *,
+    required_reviewers: int,
+    high_risk_required_reviewers: int,
+    high_risk_amount_threshold: int,
+) -> int:
+    """Return the reviewer quorum for a payment payload (shared by every approval store)."""
+
+    amount = payload.get("amount")
+    if isinstance(amount, int) and amount >= high_risk_amount_threshold:
+        return high_risk_required_reviewers
+
+    return required_reviewers
