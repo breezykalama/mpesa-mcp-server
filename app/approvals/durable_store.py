@@ -5,9 +5,10 @@ operator API) create and read the same approval requests through PostgreSQL.
 
 It is deliberately **isolated from the live approval workflow**:
 
-* It exposes no approve, reject or expire operation. Decisions on durable approvals are
-  only possible through ``PostgresApprovalRepository.record_decision`` (D3), which no
-  live code path calls yet.
+* It exposes no approve, reject or expire operation, and its repository trusts no
+  reviewer issuer. Human decisions on durable approvals go only through
+  ``DurableApprovalDecisionService`` (D4.2, ``/durable-approvals`` routes), which uses
+  ``PostgresApprovalRepository.record_decision`` (D3) and never executes a payment.
 * The live ``PaymentService`` / ``ApprovalService`` still create, decide and execute
   in-memory approvals. Nothing in the live flow writes to or reads from this store, so
   no approval request ever exists in both places and the two can never both accept

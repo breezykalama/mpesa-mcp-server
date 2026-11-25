@@ -359,6 +359,7 @@ NO_LIFESPAN_REQUESTS = (
     ("GET", "/operator/system/status"),
     ("POST", "/operator/reconciliation/run"),
     ("POST", "/approvals/any-id/approve"),
+    ("POST", "/durable-approvals/any-id/approve"),
     ("POST", "/callbacks/mpesa/stk"),
     ("GET", "/operator/ui"),
     ("GET", "/openapi.json"),
