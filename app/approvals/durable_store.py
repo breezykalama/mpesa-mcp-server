@@ -1,12 +1,12 @@
-"""Shared, non-executing durable approval creation and retrieval (Slice D4.1).
+"""Shared, non-executing durable approval creation, retrieval and expiry (D4.1, D4.3).
 
 ``DurableApprovalStore`` lets independent processes (the MCP server and the HTTP
 operator API) create and read the same approval requests through PostgreSQL.
 
 It is deliberately **isolated from the live approval workflow**:
 
-* It exposes no approve, reject or expire operation, and its repository trusts no
-  reviewer issuer. Human decisions on durable approvals go only through
+* It exposes no approve or reject operation, and its repository trusts no reviewer
+  issuer. Human decisions on durable approvals go only through
   ``DurableApprovalDecisionService`` (D4.2, ``/durable-approvals`` routes), which uses
   ``PostgresApprovalRepository.record_decision`` (D3) and never executes a payment.
 * The live ``PaymentService`` / ``ApprovalService`` still create, decide and execute
@@ -14,6 +14,9 @@ It is deliberately **isolated from the live approval workflow**:
   no approval request ever exists in both places and the two can never both accept
   decisions for the same request.
 * It never calls a payment provider and nothing executes when an approval is created.
+* Expiry (``expire_request`` / ``expire_due_requests``) is a database-clock lifecycle
+  transition, not a decision: it writes no decision row and is attributed to no
+  reviewer. Nothing schedules it automatically, and no MCP tool exposes it.
 
 Switching the live workflow over (creation, decisions, execution) is a later slice; the
 production ``APPROVAL_PERSISTENCE`` gate stays closed until then.
@@ -25,7 +28,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.approvals.models import ApprovalStatus
-from app.approvals.postgres_repository import DurableApprovalRecord, PostgresApprovalRepository
+from app.approvals.postgres_repository import (
+    DEFAULT_EXPIRY_BATCH_SIZE,
+    DurableApprovalRecord,
+    ExpiryOutcome,
+    PostgresApprovalRepository,
+)
 from app.approvals.service import required_reviewers_for_payload
 from app.config import Settings
 from app.storage.database import SessionFactory
@@ -120,6 +128,23 @@ class DurableApprovalStore:
         """Return durable approval requests with ``status``, oldest first."""
 
         return self._repository.list_by_status(status)
+
+    def expire_request(self, approval_id: str) -> ExpiryOutcome:
+        """Expire one durable request if its database deadline has passed (idempotent).
+
+        Approved, rejected, already-expired and not-yet-due requests are unchanged.
+        Unknown IDs raise ``ApprovalRequestNotFoundError``.
+        """
+
+        return self._repository.expire_request(approval_id)
+
+    def expire_due_requests(self, *, limit: int = DEFAULT_EXPIRY_BATCH_SIZE) -> int:
+        """Expire up to ``limit`` overdue pending requests; return how many were expired.
+
+        Safe to run from several workers at once (``FOR UPDATE SKIP LOCKED``).
+        """
+
+        return len(self._repository.expire_due_requests(limit=limit))
 
     def _policy_snapshot(self, required_reviewers: int) -> dict[str, Any]:
         return {
