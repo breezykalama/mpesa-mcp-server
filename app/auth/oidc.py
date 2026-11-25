@@ -52,6 +52,12 @@ class OperatorIdentity(BaseModel):
     groups: list[str] = Field(default_factory=list)
     authentication_method: AuthenticationMethod
     principal_type: PrincipalType = "unknown"
+    issuer: str | None = None
+    """Token issuer, set only from a signature- and issuer-verified OIDC JWKS token.
+
+    ``None`` for every other authentication method: static, development and disabled-auth
+    identities have no trustworthy issuer, and one must never be synthesized for them.
+    """
 
     @property
     def operator_id(self) -> str:
@@ -180,6 +186,8 @@ class JWKSOIDCIdentityProvider:
                 groups=groups,
                 authentication_method="oidc_jwks",
                 principal_type=_principal_type_from_claims(claims),
+                # jwt.decode verified ``iss`` equals the configured OIDC_ISSUER.
+                issuer=_claim_as_string(claims.get("iss")),
             )
         except Exception:
             logger.warning(
@@ -212,7 +220,7 @@ class JWKSOIDCIdentityProvider:
             audience=audience,
             issuer=issuer.rstrip("/"),
             leeway=self._settings.oidc_clock_skew_seconds,
-            options={"require": ["exp", "sub"]},
+            options={"require": ["exp", "iss", "sub"]},
         )
         if not isinstance(claims, dict):
             raise ValueError("OIDC token claims must be a JSON object.")

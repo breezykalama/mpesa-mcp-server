@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from app.auth.oidc import OperatorIdentity, OperatorRole
 
+VERIFIED_TEST_ISSUER = "https://login.example.test/tenant/v2.0"
+
 
 def verified_human(
     subject: str = "verified-approver-1",
@@ -16,6 +18,7 @@ def verified_human(
     roles: list[OperatorRole] | None = None,
     email: str | None = "approver@example.test",
     display_name: str = "Verified Approver",
+    issuer: str | None = VERIFIED_TEST_ISSUER,
 ) -> OperatorIdentity:
     """Return an IdP-verified delegated human identity (OIDC JWKS + ``scp``)."""
 
@@ -26,6 +29,7 @@ def verified_human(
         roles=roles or ["viewer", "approver"],
         authentication_method="oidc_jwks",
         principal_type="human",
+        issuer=issuer,
     )
 
 
@@ -42,6 +46,7 @@ def application_principal(
         roles=roles or ["viewer", "approver", "admin"],
         authentication_method="oidc_jwks",
         principal_type="application",
+        issuer=VERIFIED_TEST_ISSUER,
     )
 
 

@@ -397,10 +397,11 @@ def test_failed_creation_rolls_back(
     assert repository.get(follow_up.approval.approval_id) == follow_up
 
 
-def test_repository_exposes_no_mutation_operations() -> None:
+def test_repository_exposes_no_generic_mutation_operations() -> None:
     public = {name for name in vars(PostgresApprovalRepository) if not name.startswith("_")}
 
-    assert public == {"create", "get", "list_by_status", "list_decisions"}
+    # record_decision (Slice D3) is the only state-changing operation besides create.
+    assert public == {"create", "get", "list_by_status", "list_decisions", "record_decision"}
 
 
 def test_returned_records_are_detached_from_storage(
