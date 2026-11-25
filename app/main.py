@@ -9,6 +9,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.approvals.durable_routes import router as durable_approval_router
 from app.approvals.routes import router as approval_router
 from app.callbacks.routes import get_app_container, initialized_app_container
 from app.callbacks.routes import router as callback_router
@@ -134,6 +135,7 @@ async def correlation_id_middleware(
 
 app.include_router(callback_router)
 app.include_router(approval_router)
+app.include_router(durable_approval_router)
 app.include_router(operator_router)
 app.include_router(operator_ui_router)
 app.include_router(observability_router)

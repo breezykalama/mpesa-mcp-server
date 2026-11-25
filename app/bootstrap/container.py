@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.analytics.service import AnalyticsService
+from app.approvals.durable_decisions import DurableApprovalDecisionService
 from app.approvals.durable_store import DurableApprovalStore
 from app.approvals.repository import InMemoryApprovalRepository
 from app.approvals.service import ApprovalService
@@ -82,6 +83,12 @@ class AppContainer:
     operation, and the live in-memory approval workflow is unchanged. See
     ``app.approvals.durable_store``.
     """
+    durable_approval_decisions: DurableApprovalDecisionService | None = None
+    """Verified human decisions on durable approvals (``STORAGE_MODE=postgres`` only).
+
+    Non-executing: reaching quorum never initiates a payment. No live service receives
+    it. See ``app.approvals.durable_decisions``.
+    """
 
     @classmethod
     def mock(cls, settings: Settings | None = None) -> AppContainer:
@@ -96,6 +103,11 @@ class AppContainer:
         approval_repository = InMemoryApprovalRepository()
         durable_approval_store = (
             DurableApprovalStore.from_settings(resolved_settings, session_factory)
+            if session_factory is not None
+            else None
+        )
+        durable_approval_decisions = (
+            DurableApprovalDecisionService.from_settings(resolved_settings, session_factory)
             if session_factory is not None
             else None
         )
@@ -170,6 +182,7 @@ class AppContainer:
                 stale_pending_minutes=resolved_settings.reconciliation_stale_pending_minutes,
             ),
             durable_approval_store=durable_approval_store,
+            durable_approval_decisions=durable_approval_decisions,
         )
 
     @classmethod
