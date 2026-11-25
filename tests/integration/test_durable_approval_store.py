@@ -342,6 +342,8 @@ def test_store_exposes_no_decision_operations() -> None:
         "create_approval_request",
         "get_approval_request",
         "list_requests",
+        "expire_request",
+        "expire_due_requests",
     }
 
 

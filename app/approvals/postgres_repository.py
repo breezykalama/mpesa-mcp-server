@@ -2,9 +2,10 @@
 
 Requests are created and read back (Slice D2), and verified human reviewers record
 approve or reject decisions atomically with the resulting quorum transition (Slice D3).
-There is no generic update or delete operation, and expiry transitions belong to a later
-slice. The repository is not yet wired into the approval service, and it never calls a
-payment provider: reaching quorum only marks the request ``approved``.
+Pending requests whose database deadline has passed are moved to ``expired`` atomically
+(Slice D4.3). There is no generic update or delete operation. The repository is not
+wired into the live approval service, and it never calls a payment provider: reaching
+quorum only marks the request ``approved`` and expiry only marks it ``expired``.
 
 The database is the single source of truth. ``ApprovalRequest.reviewer_ids`` and
 ``review_count`` are derived from the append-only ``approval_decisions`` rows rather
@@ -40,6 +41,8 @@ UNIQUE_VIOLATION_SQLSTATE = "23505"
 STORAGE_UNAVAILABLE_MESSAGE = "Approval storage is unavailable."
 DECISION_LOCK_TIMEOUT = "5s"
 """Maximum wait for the approval row lock before the decision fails as unavailable."""
+DEFAULT_EXPIRY_BATCH_SIZE = 100
+MAX_EXPIRY_BATCH_SIZE = 1000
 
 DecisionValue = Literal["approve", "reject"]
 DecisionOutcomeStatus = Literal["partially_approved", "approved", "rejected"]
@@ -127,6 +130,18 @@ class DecisionOutcome:
     status: DecisionOutcomeStatus
     record: DurableApprovalRecord
     decision: ApprovalDecisionRecord
+
+
+@dataclass(frozen=True)
+class ExpiryOutcome:
+    """Result of a targeted expiry attempt, read inside the expiring transaction.
+
+    ``expired`` is true only for the call that performed the ``pending -> expired``
+    transition; repeated or losing attempts return ``False`` with the persisted record.
+    """
+
+    expired: bool
+    record: DurableApprovalRecord
 
 
 class PostgresApprovalRepository:
@@ -259,6 +274,61 @@ class PostgresApprovalRepository:
         except SQLAlchemyError as exc:
             raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
 
+    def expire_request(self, approval_id: str) -> ExpiryOutcome:
+        """Expire one pending request if its database deadline has passed (idempotent).
+
+        One READ COMMITTED transaction runs a conditional ``UPDATE ... RETURNING`` whose
+        target row is locked with ``SELECT ... FOR UPDATE``, the same row lock D3
+        decisions take. A concurrent decision therefore either commits first (and the
+        request is no longer ``pending``, so nothing is expired) or waits and then sees
+        the request ``expired``. The deadline is checked with ``clock_timestamp()`` using
+        the same boundary as decisions (expired once ``clock_timestamp() >= expires_at``).
+
+        Approved, rejected, already-expired and not-yet-due requests are left unchanged
+        and returned with ``expired=False``. Unknown IDs raise
+        ``ApprovalRequestNotFoundError``. No decision row is written: expiry is never
+        attributed to a reviewer.
+        """
+
+        try:
+            with self._session_factory() as session, session.begin():
+                _begin_locked_transaction(session)
+                expired = _expire_due(session, approval_id=approval_id, limit=1, skip_locked=False)
+                model = session.scalars(
+                    select(ApprovalRequestModel)
+                    .where(ApprovalRequestModel.approval_id == approval_id)
+                    .execution_options(populate_existing=True)
+                ).one_or_none()
+                if model is None:
+                    raise ApprovalRequestNotFoundError("Approval request not found.")
+                record = _to_record(model, _load_decisions(session, approval_id))
+                return ExpiryOutcome(expired=approval_id in expired, record=record)
+        except (IntegrityError, DataError) as exc:
+            raise ApprovalPersistenceError("Approval expiry violates a constraint.") from exc
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
+
+    def expire_due_requests(self, *, limit: int = DEFAULT_EXPIRY_BATCH_SIZE) -> tuple[str, ...]:
+        """Expire up to ``limit`` pending requests past their deadline; return their IDs.
+
+        Safe for concurrent workers: due rows are claimed with ``FOR UPDATE SKIP LOCKED``,
+        so workers never block on each other or on an in-flight decision, never expire
+        the same request twice, and only hold locks on the claimed batch for one short
+        statement. A request skipped because a decision held its lock is picked up by a
+        later run if it is still pending.
+        """
+
+        if isinstance(limit, bool) or not 1 <= limit <= MAX_EXPIRY_BATCH_SIZE:
+            raise ValueError(f"limit must be between 1 and {MAX_EXPIRY_BATCH_SIZE}")
+        try:
+            with self._session_factory() as session, session.begin():
+                _begin_locked_transaction(session)
+                return _expire_due(session, approval_id=None, limit=limit, skip_locked=True)
+        except (IntegrityError, DataError) as exc:
+            raise ApprovalPersistenceError("Approval expiry violates a constraint.") from exc
+        except SQLAlchemyError as exc:
+            raise InfrastructureUnavailableError(STORAGE_UNAVAILABLE_MESSAGE) from exc
+
     def list_decisions(self, approval_id: str) -> tuple[ApprovalDecisionRecord, ...]:
         """Return the reviewer decisions for an approval, oldest first."""
 
@@ -310,10 +380,7 @@ class PostgresApprovalRepository:
 
         try:
             with self._session_factory() as session, session.begin():
-                # Pin READ COMMITTED for this transaction: after waiting on the row lock,
-                # each statement must see decisions committed by the previous lock holder.
-                session.connection(execution_options={"isolation_level": "READ COMMITTED"})
-                session.execute(text(f"SET LOCAL lock_timeout = '{DECISION_LOCK_TIMEOUT}'"))
+                _begin_locked_transaction(session)
                 return self._record_decision_locked(
                     session,
                     approval_id,
@@ -431,6 +498,67 @@ class PostgresApprovalRepository:
         record = _to_record(refreshed, decisions)
         recorded = next(row for row in decisions if row.decision_id == decision_id)
         return DecisionOutcome(status=status, record=record, decision=recorded)
+
+
+def _begin_locked_transaction(session: Session) -> None:
+    """Pin READ COMMITTED and a bounded lock wait for a decision or expiry transaction.
+
+    After waiting on a row lock, each statement must see the changes committed by the
+    previous lock holder.
+    """
+
+    session.connection(execution_options={"isolation_level": "READ COMMITTED"})
+    session.execute(text(f"SET LOCAL lock_timeout = '{DECISION_LOCK_TIMEOUT}'"))
+
+
+def _expire_due(
+    session: Session,
+    *,
+    approval_id: str | None,
+    limit: int,
+    skip_locked: bool,
+) -> tuple[str, ...]:
+    """Atomically move due ``pending`` rows to ``expired``; return the expired IDs.
+
+    The subquery locks the due rows (``FOR UPDATE``). In READ COMMITTED, a row locked by
+    a concurrent decision is re-checked after that lock is released, so a request that
+    became ``approved`` or ``rejected`` no longer qualifies. The outer
+    ``status = 'pending'`` guard and the database trigger (resolved rows are immutable;
+    version advances by exactly one) make a second transition impossible.
+    """
+
+    database_now = func.clock_timestamp()
+    due = (
+        select(ApprovalRequestModel.approval_id)
+        .where(
+            ApprovalRequestModel.status == "pending",
+            ApprovalRequestModel.expires_at <= database_now,
+        )
+        .order_by(ApprovalRequestModel.expires_at, ApprovalRequestModel.approval_id)
+        .limit(limit)
+        .with_for_update(skip_locked=skip_locked)
+    )
+    if approval_id is not None:
+        due = due.where(ApprovalRequestModel.approval_id == approval_id)
+    # MATERIALIZED evaluates the locking subquery exactly once. As a plain ``IN``
+    # subquery, a nested-loop plan may rescan it per outer row; each rescan skips rows
+    # this statement already updated and claims the next ones, ignoring ``limit``.
+    claimed = due.cte("due_approval_requests").prefix_with("MATERIALIZED")
+    result = session.execute(
+        update(ApprovalRequestModel)
+        .where(
+            ApprovalRequestModel.approval_id.in_(select(claimed.c.approval_id)),
+            ApprovalRequestModel.status == "pending",
+        )
+        .values(
+            status="expired",
+            resolved_at=database_now,
+            version=ApprovalRequestModel.version + 1,
+        )
+        .returning(ApprovalRequestModel.approval_id)
+        .execution_options(synchronize_session=False)
+    )
+    return tuple(result.scalars().all())
 
 
 def _require_aware_utc(value: datetime, field: str) -> datetime:

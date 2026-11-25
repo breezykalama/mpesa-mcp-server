@@ -400,8 +400,17 @@ def test_failed_creation_rolls_back(
 def test_repository_exposes_no_generic_mutation_operations() -> None:
     public = {name for name in vars(PostgresApprovalRepository) if not name.startswith("_")}
 
-    # record_decision (Slice D3) is the only state-changing operation besides create.
-    assert public == {"create", "get", "list_by_status", "list_decisions", "record_decision"}
+    # Besides create, the only state changes are record_decision (Slice D3) and the
+    # conditional pending -> expired transitions (Slice D4.3). No generic update/delete.
+    assert public == {
+        "create",
+        "get",
+        "list_by_status",
+        "list_decisions",
+        "record_decision",
+        "expire_request",
+        "expire_due_requests",
+    }
 
 
 def test_returned_records_are_detached_from_storage(
