@@ -174,7 +174,11 @@ class ProviderObservation:
 
     @property
     def identity_key(self) -> tuple[object, ...]:
-        """Fields that make two observations the same observation (for de-duplication)."""
+        """Fields that make two observations the same observation (for de-duplication).
+
+        Includes the complete ``binding``: observations stored against different
+        attempts are never merged, so every binding reaches correlation validation.
+        """
 
         return (
             self.source,
@@ -183,6 +187,7 @@ class ProviderObservation:
             self.merchant_request_id,
             self.settlement_id,
             self.identity,
+            self.binding,
         )
 
 

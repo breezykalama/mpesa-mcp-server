@@ -289,6 +289,61 @@ def test_duplicate_observations_collapse() -> None:
     _assert_never_an_outcome(assessment)
 
 
+MISBINDINGS = [
+    OTHER_BINDING,
+    dataclasses.replace(BINDING, attempt_id="attempt-2"),
+    dataclasses.replace(BINDING, claim_id="claim-2"),
+    dataclasses.replace(BINDING, approval_id="approval-2"),
+    dataclasses.replace(BINDING, payload_hash="c" * 64),
+]
+MISBINDING_IDS = ["other-attempt", "attempt-id", "claim-id", "approval-id", "payload-hash"]
+
+
+@pytest.mark.parametrize("misbound", MISBINDINGS, ids=MISBINDING_IDS)
+def test_misbound_duplicate_conflicts_in_either_order(misbound: AttemptBinding) -> None:
+    correct = _callback(binding=BINDING)
+    wrong = _callback(binding=misbound)
+
+    assert correct.identity_key != wrong.identity_key
+    for order in ([correct, wrong], [wrong, correct]):
+        assessment = assess_attempt_correlation(_context(), order)
+        assert assessment.status == "conflicting", order
+        assert "binding_mismatch" in assessment.reasons
+        assert assessment.distinct_observations == 2
+        assert assessment.duplicate_observations == 0
+        _assert_never_an_outcome(assessment)
+
+
+def test_identical_bound_observations_still_collapse() -> None:
+    bound = [_callback(binding=BINDING), _callback(binding=BINDING), _callback(binding=BINDING)]
+
+    assessment = assess_attempt_correlation(_context(), bound)
+
+    assert assessment.status == "correlated"
+    assert assessment.distinct_observations == 1
+    assert assessment.duplicate_observations == 2
+
+
+def test_binding_aware_assessment_is_independent_of_arrival_order() -> None:
+    observations = [
+        _initiation(binding=BINDING),
+        _callback(binding=BINDING),
+        _callback(binding=BINDING),
+        _callback(binding=dataclasses.replace(BINDING, claim_id="claim-2")),
+    ]
+
+    results = {
+        assess_attempt_correlation(_context(), list(order))
+        for order in itertools.permutations(observations)
+    }
+
+    assert len(results) == 1
+    result = next(iter(results))
+    assert result.status == "conflicting"
+    assert result.reasons == ("binding_mismatch",)
+    assert (result.distinct_observations, result.duplicate_observations) == (3, 1)
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 
