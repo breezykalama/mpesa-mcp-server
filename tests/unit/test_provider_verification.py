@@ -499,6 +499,126 @@ def test_misbound_contradiction_does_not_feed_consistency_checks() -> None:
     assert assessment.settlement_ids == frozenset({RECEIPT})
 
 
+@pytest.mark.parametrize("checkout", [None, ""], ids=["none", "empty"])
+def test_bound_missing_checkout_with_conflicting_merchant_id_conflicts(
+    checkout: str | None,
+) -> None:
+    wrong = _callback(binding=BINDING, checkout_request_id=checkout, merchant_request_id="mr-x")
+
+    alone = assess_attempt_correlation(_context(), [wrong])
+    assert alone.status == "conflicting"
+    assert "merchant_request_id_mismatch" in alone.reasons
+    for order in ([_callback(binding=BINDING), wrong], [wrong, _callback(binding=BINDING)]):
+        assessment = assess_attempt_correlation(_context(), order)
+        assert assessment.status == "conflicting"
+        assert "merchant_request_id_mismatch" in assessment.reasons
+
+
+@pytest.mark.parametrize("merchant", [MERCHANT, None], ids=["matching", "absent"])
+def test_bound_missing_checkout_without_merchant_conflict_stays_unresolved(
+    merchant: str | None,
+) -> None:
+    observation = _callback(binding=BINDING, checkout_request_id=None, merchant_request_id=merchant)
+
+    assessment = assess_attempt_correlation(_context(), [observation])
+
+    assert assessment.status == "unresolved"
+    assert assessment.reasons == ("missing_checkout_request_id",)
+    assert assessment.sources == frozenset()
+
+
+@pytest.mark.parametrize("make", [_initiation, _status_query], ids=["initiation", "status-query"])
+def test_bound_non_callback_without_checkout_carrying_receipt_conflicts(make: Any) -> None:
+    improper = make(binding=BINDING, checkout_request_id=None, settlement_id=RECEIPT)
+    alias = make(binding=BINDING, checkout_request_id=None, settlement_id=CHECKOUT)
+
+    assessment = assess_attempt_correlation(_context(), [_callback(binding=BINDING), improper])
+    assert assessment.status == "conflicting"
+    assert "non_settlement_source_carries_settlement_identifier" in assessment.reasons
+
+    accepted = assess_attempt_correlation(_context(), [_callback(binding=BINDING), alias])
+    assert accepted.status == "correlated"
+    assert accepted.reasons == ("missing_checkout_request_id",)
+
+
+def test_bound_observations_with_unknown_attempt_identifiers_are_checked() -> None:
+    context = _context(checkout=frozenset(), merchant=frozenset())
+    cases = {
+        "conflicting_callback_result_codes": [
+            _callback(binding=BINDING),
+            _callback(binding=BINDING, result_code="1032", settlement_id=None),
+        ],
+        "conflicting_initiation_result_codes": [
+            _initiation(binding=BINDING, result_code="0"),
+            _initiation(binding=BINDING, result_code="1"),
+        ],
+        "conflicting_settlement_identifiers": [
+            _callback(binding=BINDING),
+            _callback(binding=BINDING, settlement_id="OTHERRCPT"),
+        ],
+        "callback_after_rejected_initiation": [
+            _initiation(binding=BINDING, result_code="1"),
+            _callback(binding=BINDING),
+        ],
+    }
+    for reason, observations in cases.items():
+        assessment = assess_attempt_correlation(context, observations)
+        assert assessment.status == "conflicting", reason
+        assert reason in assessment.reasons
+        assert assessment.sources == frozenset()
+
+    consistent = assess_attempt_correlation(
+        context, [_callback(binding=BINDING), _initiation(binding=BINDING)]
+    )
+    assert consistent.status == "unresolved"
+    assert consistent.reasons == ("attempt_initiation_identifiers_unknown",)
+    assert consistent.sources == frozenset()
+    _assert_never_an_outcome(consistent)
+
+
+def test_misbound_merchant_conflict_is_only_a_binding_mismatch() -> None:
+    misbound = _callback(
+        binding=OTHER_BINDING, checkout_request_id=None, merchant_request_id="mr-x"
+    )
+
+    assessment = assess_attempt_correlation(_context(), [_callback(binding=BINDING), misbound])
+
+    assert assessment.reasons == ("binding_mismatch",)
+
+
+def test_bound_missing_id_duplicates_collapse() -> None:
+    observation = _callback(binding=BINDING, checkout_request_id=None)
+
+    assessment = assess_attempt_correlation(_context(), [observation] * 3)
+
+    assert (assessment.distinct_observations, assessment.duplicate_observations) == (1, 2)
+
+
+def test_comprehensive_consistency_is_independent_of_arrival_order() -> None:
+    observations = [
+        _initiation(binding=BINDING),
+        _callback(binding=BINDING),
+        _callback(binding=BINDING, checkout_request_id=None, merchant_request_id="mr-x"),
+        _status_query(binding=BINDING, checkout_request_id=None, settlement_id=RECEIPT),
+        _callback(binding=OTHER_BINDING, checkout_request_id=None),
+    ]
+
+    results = {
+        assess_attempt_correlation(_context(), list(order))
+        for order in itertools.permutations(observations)
+    }
+
+    assert len(results) == 1
+    result = next(iter(results))
+    assert result.status == "conflicting"
+    assert {
+        "binding_mismatch",
+        "merchant_request_id_mismatch",
+        "non_settlement_source_carries_settlement_identifier",
+    } <= set(result.reasons)
+    _assert_never_an_outcome(result)
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 

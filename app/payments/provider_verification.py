@@ -388,45 +388,39 @@ def assess_attempt_correlation(
 
     reasons: set[str] = set()
     correlated: list[ProviderObservation] = []
-    # Correctly bound observations that lack a CheckoutRequestID cannot correlate, but
-    # they still take part in contradiction checks so they cannot hide a conflict.
-    bound_unidentified: list[ProviderObservation] = []
+    # Correctly bound observations that did not correlate by identifier cannot establish
+    # correlation, but they take part in every consistency check so they cannot hide a
+    # contradiction. A stored binding is not provider authentication.
+    bound_uncorrelated: list[ProviderObservation] = []
     for observation in distinct:
-        # Validate the stored binding before any identifier-based correlation.
+        # Validate the stored binding before any identifier-based correlation; mis-bound
+        # observations contribute nothing else to this attempt's assessment.
         if observation.binding is not None and observation.binding != context.binding:
             reasons.add("binding_mismatch")
             continue
         outcome = correlate_observation(observation, [context])
         if outcome.status == "correlated":
             correlated.append(observation)
-        elif outcome.status in ("conflicting", "ambiguous"):
+            continue
+        if outcome.status in ("conflicting", "ambiguous"):
             reasons.update(outcome.reasons)
         elif observation.checkout_request_id is not None and context.checkout_request_ids:
             # An observation for a different request cannot belong to this attempt.
             reasons.add("observation_for_different_request")
         else:
             reasons.update(outcome.reasons)
-            if observation.binding == context.binding and observation.checkout_request_id is None:
-                bound_unidentified.append(observation)
+        if observation.binding == context.binding:
+            bound_uncorrelated.append(observation)
 
     # Consistency is checked over correlated and correctly bound observations; only
     # identifier-correlated observations establish correlation or count as sources.
-    consistency = [*correlated, *bound_unidentified]
+    consistency = [*correlated, *bound_uncorrelated]
+    reasons.update(_consistency_reasons(context, consistency))
     settlement_ids = frozenset(
         o.settlement_id
         for o in consistency
         if o.source == CALLBACK_SOURCE and o.settlement_id is not None
     )
-    if len(settlement_ids) > 1:
-        reasons.add("conflicting_settlement_identifiers")
-    callback_codes = {o.result_code for o in consistency if o.source == CALLBACK_SOURCE}
-    if len(callback_codes) > 1:
-        reasons.add("conflicting_callback_result_codes")
-    initiation_codes = {o.result_code for o in consistency if o.source == INITIATION_SOURCE}
-    if len(initiation_codes) > 1:
-        reasons.add("conflicting_initiation_result_codes")
-    if initiation_codes and INITIATION_ACCEPTED_CODE not in initiation_codes and callback_codes:
-        reasons.add("callback_after_rejected_initiation")
 
     status: AttemptCorrelationStatus
     if reasons & _CONFLICT_REASONS:
@@ -453,6 +447,55 @@ def assess_attempt_correlation(
         settlement_ids=settlement_ids,
         eligibility=VerificationEligibility(eligible=False, reasons=eligibility_reasons),
     )
+
+
+def _consistency_reasons(
+    context: AttemptCorrelationContext,
+    observations: Sequence[ProviderObservation],
+) -> set[str]:
+    """Contradictions among observations that belong to ``context``'s attempt.
+
+    Applied to identifier-correlated and correctly bound observations alike, so a
+    missing or unestablished ``CheckoutRequestID`` can never suppress a conflict. Only
+    identifiers that are present are compared; nothing absent becomes a mismatch.
+    """
+
+    reasons: set[str] = set()
+    for observation in observations:
+        merchant = observation.merchant_request_id
+        if (
+            merchant is not None
+            and context.merchant_request_ids
+            and merchant not in context.merchant_request_ids
+        ):
+            reasons.add("merchant_request_id_mismatch")
+        if observation.source != CALLBACK_SOURCE and observation.settlement_id is not None:
+            # The existing adapters repeat the CheckoutRequestID here; any other value,
+            # or one that cannot be tied to a known CheckoutRequestID, is improper.
+            aliases = (
+                {observation.checkout_request_id}
+                if observation.checkout_request_id is not None
+                else set(context.checkout_request_ids)
+            )
+            if observation.settlement_id not in aliases:
+                reasons.add("non_settlement_source_carries_settlement_identifier")
+
+    receipts = {
+        o.settlement_id
+        for o in observations
+        if o.source == CALLBACK_SOURCE and o.settlement_id is not None
+    }
+    if len(receipts) > 1:
+        reasons.add("conflicting_settlement_identifiers")
+    callback_codes = {o.result_code for o in observations if o.source == CALLBACK_SOURCE}
+    if len(callback_codes) > 1:
+        reasons.add("conflicting_callback_result_codes")
+    initiation_codes = {o.result_code for o in observations if o.source == INITIATION_SOURCE}
+    if len(initiation_codes) > 1:
+        reasons.add("conflicting_initiation_result_codes")
+    if initiation_codes and INITIATION_ACCEPTED_CODE not in initiation_codes and callback_codes:
+        reasons.add("callback_after_rejected_initiation")
+    return reasons
 
 
 _CONFLICT_REASONS = frozenset(
