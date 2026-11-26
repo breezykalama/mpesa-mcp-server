@@ -846,6 +846,96 @@ def test_consistent_initiation_without_checkout_stays_unresolved() -> None:
     assert result.sources == frozenset()
 
 
+NO_MERCHANT = frozenset[str]()
+
+
+def test_same_checkout_different_merchant_ids_conflict_without_context_merchant() -> None:
+    context = _context(merchant=NO_MERCHANT)
+    first = _callback(binding=BINDING, merchant_request_id="mr-a")
+    second = _callback(binding=BINDING, merchant_request_id="mr-b", result_code="0")
+
+    result = _every_order(context, [first, second])
+
+    assert result.status == "conflicting"
+    assert "merchant_request_id_mismatch" in result.reasons
+    _assert_never_an_outcome(result)
+
+
+def test_different_checkouts_conflict_when_attempt_checkout_unknown() -> None:
+    context = _context(checkout=frozenset(), merchant=NO_MERCHANT)
+    first = _callback(binding=BINDING, checkout_request_id="ws_CO_a")
+    second = _callback(binding=BINDING, checkout_request_id="ws_CO_b")
+
+    result = _every_order(context, [first, second])
+
+    assert result.status == "conflicting"
+    assert "observation_for_different_request" in result.reasons
+    assert result.sources == frozenset()
+
+
+def test_matching_identifiers_across_observations_do_not_conflict() -> None:
+    known = _every_order(
+        _context(merchant=NO_MERCHANT),
+        [_callback(binding=BINDING), _callback(binding=BINDING), _initiation(binding=BINDING)],
+    )
+    unknown = _every_order(
+        _context(checkout=frozenset(), merchant=NO_MERCHANT),
+        [_callback(binding=BINDING), _initiation(binding=BINDING)],
+    )
+
+    assert known.status == "correlated"
+    assert known.reasons == ()
+    assert unknown.status == "unresolved"
+    assert unknown.reasons == ("attempt_initiation_identifiers_unknown",)
+
+
+def test_missing_identifiers_never_create_cross_observation_conflicts() -> None:
+    context = _context(merchant=NO_MERCHANT)
+    observations = [
+        _callback(binding=BINDING, merchant_request_id="mr-a"),
+        _callback(binding=BINDING, merchant_request_id=None, checkout_request_id=None),
+        _status_query(binding=BINDING),
+    ]
+
+    result = _every_order(context, observations)
+
+    assert result.status == "correlated"
+    assert "merchant_request_id_mismatch" not in result.reasons
+    assert "observation_for_different_request" not in result.reasons
+
+
+def test_misbound_or_other_identity_identifiers_are_not_cross_checked() -> None:
+    context = _context(merchant=NO_MERCHANT)
+    valid = _callback(binding=BINDING, merchant_request_id="mr-a")
+    misbound = _callback(binding=OTHER_BINDING, merchant_request_id="mr-b")
+    other_identity = _callback(
+        binding=BINDING,
+        merchant_request_id="mr-c",
+        identity=ProviderIdentity(provider="other"),
+    )
+
+    result = _every_order(context, [valid, misbound, other_identity])
+
+    assert {"binding_mismatch", "provider_or_rail_mismatch"} <= set(result.reasons)
+    # Their merchant IDs never reach the expected attempt's cross-checks.
+    assert "merchant_request_id_mismatch" not in result.reasons
+
+
+def test_receipt_and_code_conflicts_unchanged_with_cross_checks() -> None:
+    context = _context(merchant=NO_MERCHANT)
+    result = _every_order(
+        context,
+        [
+            _callback(binding=BINDING),
+            _callback(binding=BINDING, settlement_id="OTHERRCPT", result_code="1032"),
+        ],
+    )
+
+    assert {"conflicting_settlement_identifiers", "conflicting_callback_result_codes"} <= set(
+        result.reasons
+    )
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 

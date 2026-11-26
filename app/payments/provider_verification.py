@@ -502,6 +502,15 @@ def _consistency_reasons(
             if observation.settlement_id not in aliases:
                 reasons.add("non_settlement_source_carries_settlement_identifier")
 
+    # Present identifiers must also agree between observations, not only with the
+    # context; this never makes an observation's identifiers the attempt's own.
+    merchants = {o.merchant_request_id for o in comparable if o.merchant_request_id is not None}
+    if len(merchants) > 1:
+        reasons.add("merchant_request_id_mismatch")
+    checkouts = {o.checkout_request_id for o in comparable if o.checkout_request_id is not None}
+    if len(checkouts) > 1:
+        reasons.add("observation_for_different_request")
+
     receipts = {
         o.settlement_id
         for o in comparable
