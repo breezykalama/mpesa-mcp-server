@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 from tests.integration.postgres_support import alembic_config
 
-HEAD_REVISION = "0009_payment_execution_claims"
-"""Current Alembic head; downgrading to 0007 also removes the later E1 claims table."""
+HEAD_REVISION = "0010_payment_execution_evidence"
+"""Current Alembic head; downgrading to 0007 also removes the later E1 and E2 tables."""
 PREVIOUS_REVISION = "0007_audit_operator_roles"
 
 NOT_NULL_VIOLATION = "23502"

@@ -293,6 +293,12 @@ class PaymentExecutionClaimModel(Base):
             "claim_token_hash",
             name="uq_payment_execution_claims_claim_token_hash",
         ),
+        UniqueConstraint(
+            "claim_id",
+            "approval_id",
+            "payload_hash",
+            name="uq_payment_execution_claims_identity",
+        ),
         CheckConstraint(
             "status IN ('claimed')",
             name="ck_payment_execution_claims_status_allowed",
@@ -315,6 +321,127 @@ class PaymentExecutionClaimModel(Base):
     claimed_by: Mapped[str] = mapped_column(String(255), nullable=False)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class PaymentExecutionAttemptModel(Base):
+    """At most one execution attempt per claim, recorded by the claim owner (E2.1).
+
+    Bound by composite foreign key to the claim, approval and approved payload hash.
+    On PostgreSQL, migration ``0010_payment_execution_evidence`` makes attempts
+    append-only and requires ``recorded_by`` to be the claim owner.
+    """
+
+    __tablename__ = "payment_execution_attempts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["claim_id", "approval_id", "payload_hash"],
+            [
+                "payment_execution_claims.claim_id",
+                "payment_execution_claims.approval_id",
+                "payment_execution_claims.payload_hash",
+            ],
+            name="fk_payment_execution_attempts_claim_identity",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("claim_id", name="uq_payment_execution_attempts_claim_id"),
+        UniqueConstraint(
+            "attempt_id",
+            "claim_id",
+            "approval_id",
+            "payload_hash",
+            name="uq_payment_execution_attempts_identity",
+        ),
+        CheckConstraint(
+            "length(provider) > 0 AND length(rail) > 0",
+            name="ck_payment_execution_attempts_provider_not_empty",
+        ),
+        CheckConstraint(
+            "length(recorded_by) > 0",
+            name="ck_payment_execution_attempts_recorded_by_not_empty",
+        ),
+    )
+
+    attempt_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    rail: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recorded_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class PaymentExecutionEvidenceModel(Base):
+    """Append-only fact observed about one execution attempt (E2.1).
+
+    Every row states its type, source and verification level. In E2.1 the only
+    verification level is ``unverified``: an observed provider response is stored as
+    reported and is never authoritative confirmation.
+    """
+
+    __tablename__ = "payment_execution_evidence"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["attempt_id", "claim_id", "approval_id", "payload_hash"],
+            [
+                "payment_execution_attempts.attempt_id",
+                "payment_execution_attempts.claim_id",
+                "payment_execution_attempts.approval_id",
+                "payment_execution_attempts.payload_hash",
+            ],
+            name="fk_payment_execution_evidence_attempt_identity",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("attempt_id", "sequence", name="uq_payment_execution_evidence_sequence"),
+        UniqueConstraint(
+            "attempt_id",
+            "observation_key",
+            name="uq_payment_execution_evidence_observation_key",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_payment_execution_evidence_sequence"),
+        CheckConstraint(
+            "verification_level IN ('unverified')",
+            name="ck_payment_execution_evidence_verification_level",
+        ),
+        CheckConstraint(
+            "length(evidence_hash) = 64 AND evidence_hash = lower(evidence_hash)",
+            name="ck_payment_execution_evidence_hash_format",
+        ),
+        CheckConstraint(
+            "length(observation_key) > 0",
+            name="ck_payment_execution_evidence_observation_key_not_empty",
+        ),
+        Index("ix_payment_execution_evidence_checkout_request_id", "checkout_request_id"),
+    )
+
+    evidence_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    claim_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    approval_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    evidence_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    verification_level: Mapped[str] = mapped_column(String(16), nullable=False)
+    observation_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    uncertainty_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    result_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    result_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checkout_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    merchant_request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_transaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
