@@ -344,6 +344,68 @@ def test_binding_aware_assessment_is_independent_of_arrival_order() -> None:
     assert (result.distinct_observations, result.duplicate_observations) == (3, 1)
 
 
+@pytest.mark.parametrize("checkout", [None, ""], ids=["none", "empty"])
+@pytest.mark.parametrize("misbound", MISBINDINGS, ids=MISBINDING_IDS)
+def test_misbound_observation_without_checkout_id_conflicts(
+    misbound: AttemptBinding, checkout: str | None
+) -> None:
+    observation = _callback(binding=misbound, checkout_request_id=checkout)
+
+    single = correlate_observation(observation, [_context()])
+    assert single.status == "conflicting"
+    assert single.reasons == ("binding_mismatch",)
+    _assert_never_an_outcome(single)
+
+    valid = _callback(binding=BINDING)
+    for order in ([valid, observation], [observation, valid]):
+        assessment = assess_attempt_correlation(_context(), order)
+        assert assessment.status == "conflicting", order
+        assert "binding_mismatch" in assessment.reasons
+        _assert_never_an_outcome(assessment)
+
+
+@pytest.mark.parametrize("checkout", [None, ""], ids=["none", "empty"])
+def test_correctly_bound_observation_without_checkout_id_stays_unresolved(
+    checkout: str | None,
+) -> None:
+    observation = _callback(binding=BINDING, checkout_request_id=checkout)
+
+    assert correlate_observation(observation, [_context()]).reasons == (
+        "missing_checkout_request_id",
+    )
+    assessment = assess_attempt_correlation(_context(), [observation, observation])
+    assert assessment.status == "unresolved"
+    assert assessment.reasons == ("missing_checkout_request_id",)
+    assert assessment.duplicate_observations == 1
+
+
+def test_binding_first_assessment_is_independent_of_arrival_order() -> None:
+    observations = [
+        _callback(binding=BINDING),
+        _callback(binding=BINDING),
+        _callback(binding=BINDING, checkout_request_id=None),
+        _callback(binding=OTHER_BINDING, checkout_request_id=None),
+    ]
+
+    results = {
+        assess_attempt_correlation(_context(), list(order))
+        for order in itertools.permutations(observations)
+    }
+
+    assert len(results) == 1
+    result = next(iter(results))
+    assert result.status == "conflicting"
+    assert "binding_mismatch" in result.reasons
+    assert (result.distinct_observations, result.duplicate_observations) == (3, 1)
+
+
+def test_ambiguity_is_preserved_without_a_unique_expected_attempt() -> None:
+    contexts = [_context(), _context(OTHER_BINDING)]
+
+    assert correlate_observation(_callback(), contexts).status == "ambiguous"
+    assert correlate_observation(_callback(binding=BINDING), contexts).status == "ambiguous"
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 

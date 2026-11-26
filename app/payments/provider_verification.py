@@ -317,6 +317,15 @@ def correlate_observation(
             eligibility=VerificationEligibility(eligible=False, reasons=ineligible),
         )
 
+    # Binding first: with a single known candidate, a stored observation bound to
+    # another attempt conflicts even when its provider identifiers are missing.
+    if (
+        observation.binding is not None
+        and len(candidates) == 1
+        and observation.binding != candidates[0].binding
+    ):
+        return result("conflicting", "binding_mismatch", attempt=candidates[0].binding)
+
     checkout = observation.checkout_request_id
     if checkout is None:
         return result("uncorrelated", "missing_checkout_request_id")
@@ -380,6 +389,10 @@ def assess_attempt_correlation(
     reasons: set[str] = set()
     correlated: list[ProviderObservation] = []
     for observation in distinct:
+        # Validate the stored binding before any identifier-based correlation.
+        if observation.binding is not None and observation.binding != context.binding:
+            reasons.add("binding_mismatch")
+            continue
         outcome = correlate_observation(observation, [context])
         if outcome.status == "correlated":
             correlated.append(observation)
