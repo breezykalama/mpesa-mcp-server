@@ -986,6 +986,58 @@ def _raw_evidence(engine: Engine, attempt_id: str, sqlstate: str, **overrides: A
     _assert_rejected(sqlstate, engine, RAW_EVIDENCE.format(payload_hash=payload_hash), **params)
 
 
+def test_database_rejects_outcome_unknown_without_a_reason(
+    approvals: PostgresApprovalRepository,
+    claims: PostgresExecutionClaimRepository,
+    evidence: PostgresExecutionEvidenceRepository,
+    engine: Engine,
+) -> None:
+    claim = _claimed(approvals, claims)
+    attempt = _submitted(evidence, claim)
+
+    # NULL reason and NULL result code: the CHECK must be FALSE, not UNKNOWN.
+    _raw_evidence(
+        engine,
+        attempt.attempt_id,
+        CHECK_VIOLATION,
+        type="outcome_unknown",
+        source="execution_worker",
+        reason=None,
+        code=None,
+    )
+    with engine.connect() as connection:
+        malformed = connection.execute(
+            text(
+                "SELECT count(*) FROM payment_execution_evidence"
+                " WHERE attempt_id = :a AND evidence_type = 'outcome_unknown'"
+            ),
+            {"a": attempt.attempt_id},
+        ).scalar_one()
+    assert malformed == 0
+
+    # An otherwise identical row with a valid reason is accepted.
+    with engine.begin() as connection:
+        connection.execute(
+            text(RAW_EVIDENCE.format(payload_hash="payload_hash")),
+            {
+                "id": str(uuid4()),
+                "attempt": attempt.attempt_id,
+                "sequence": 2,
+                "type": "outcome_unknown",
+                "source": "execution_worker",
+                "key": "outcome_unknown",
+                "hash": "c" * 64,
+                "reason": "timeout",
+                "code": None,
+            },
+        )
+    rows = evidence.list_evidence(claim.claim.claim_id)
+    assert [(row.evidence_type, row.uncertainty_reason) for row in rows] == [
+        ("submission_started", None),
+        ("outcome_unknown", "timeout"),
+    ]
+
+
 def test_database_guards_attempts(
     approvals: PostgresApprovalRepository,
     claims: PostgresExecutionClaimRepository,

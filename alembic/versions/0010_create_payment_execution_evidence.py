@@ -227,7 +227,8 @@ def upgrade() -> None:
             "(evidence_type = 'submission_started' AND evidence_source = 'execution_worker'"
             "  AND uncertainty_reason IS NULL AND result_code IS NULL)"
             " OR (evidence_type = 'outcome_unknown' AND evidence_source = 'execution_worker'"
-            "  AND uncertainty_reason IN"
+            # IS NOT NULL keeps the branch FALSE (not UNKNOWN) for a NULL reason.
+            "  AND uncertainty_reason IS NOT NULL AND uncertainty_reason IN"
             "   ('timeout', 'connection_error', 'unexpected_error', 'worker_interrupted')"
             "  AND result_code IS NULL)"
             " OR (evidence_type = 'provider_response_observed'"
