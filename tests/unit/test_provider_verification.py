@@ -406,6 +406,99 @@ def test_ambiguity_is_preserved_without_a_unique_expected_attempt() -> None:
     assert correlate_observation(_callback(binding=BINDING), contexts).status == "ambiguous"
 
 
+def test_bound_initiation_rejection_without_checkout_id_conflicts_in_any_order() -> None:
+    observations = [
+        _initiation(binding=BINDING, result_code="0"),
+        _callback(binding=BINDING),
+        _initiation(binding=BINDING, result_code="1", checkout_request_id=None, settlement_id=None),
+    ]
+
+    results = {
+        assess_attempt_correlation(_context(), list(order))
+        for order in itertools.permutations(observations)
+    }
+
+    assert len(results) == 1
+    result = next(iter(results))
+    assert result.status == "conflicting"
+    assert "conflicting_initiation_result_codes" in result.reasons
+    _assert_never_an_outcome(result)
+
+
+def test_bound_initiation_rejection_cannot_be_hidden_by_a_correlated_callback() -> None:
+    rejection = _initiation(
+        binding=BINDING, result_code="1", checkout_request_id=None, settlement_id=None
+    )
+
+    assessment = assess_attempt_correlation(_context(), [_callback(binding=BINDING), rejection])
+
+    assert assessment.status == "conflicting"
+    assert "callback_after_rejected_initiation" in assessment.reasons
+
+
+@pytest.mark.parametrize("checkout", [None, ""], ids=["none", "empty"])
+def test_bound_callback_without_checkout_id_contradicting_result_conflicts(
+    checkout: str | None,
+) -> None:
+    contradiction = _callback(
+        binding=BINDING, result_code="1032", settlement_id=None, checkout_request_id=checkout
+    )
+
+    for order in (
+        [_callback(binding=BINDING), contradiction],
+        [contradiction, _callback(binding=BINDING)],
+    ):
+        assessment = assess_attempt_correlation(_context(), order)
+        assert assessment.status == "conflicting"
+        assert "conflicting_callback_result_codes" in assessment.reasons
+
+
+def test_bound_callback_without_checkout_id_with_other_receipt_conflicts() -> None:
+    other = _callback(binding=BINDING, checkout_request_id=None, settlement_id="OTHERRCPT")
+
+    assessment = assess_attempt_correlation(_context(), [_callback(binding=BINDING), other])
+
+    assert assessment.status == "conflicting"
+    assert "conflicting_settlement_identifiers" in assessment.reasons
+
+
+def test_missing_id_evidence_never_establishes_correlation_or_sources() -> None:
+    alone = assess_attempt_correlation(
+        _context(),
+        [
+            _callback(binding=BINDING, checkout_request_id=None),
+            _initiation(binding=BINDING, checkout_request_id=None, settlement_id=None),
+        ],
+    )
+    with_callback = assess_attempt_correlation(
+        _context(),
+        [
+            _callback(binding=BINDING),
+            _initiation(binding=BINDING, checkout_request_id=None, settlement_id=None),
+        ],
+    )
+
+    assert alone.status == "unresolved"
+    assert alone.sources == frozenset()
+    assert with_callback.status == "correlated"
+    assert with_callback.sources == frozenset({"provider_callback"})
+
+
+def test_misbound_contradiction_does_not_feed_consistency_checks() -> None:
+    misbound = _callback(
+        binding=OTHER_BINDING,
+        result_code="1032",
+        settlement_id="OTHERRCPT",
+        checkout_request_id=None,
+    )
+
+    assessment = assess_attempt_correlation(_context(), [_callback(binding=BINDING), misbound])
+
+    assert assessment.status == "conflicting"
+    assert assessment.reasons == ("binding_mismatch",)
+    assert assessment.settlement_ids == frozenset({RECEIPT})
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 

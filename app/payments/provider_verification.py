@@ -388,6 +388,9 @@ def assess_attempt_correlation(
 
     reasons: set[str] = set()
     correlated: list[ProviderObservation] = []
+    # Correctly bound observations that lack a CheckoutRequestID cannot correlate, but
+    # they still take part in contradiction checks so they cannot hide a conflict.
+    bound_unidentified: list[ProviderObservation] = []
     for observation in distinct:
         # Validate the stored binding before any identifier-based correlation.
         if observation.binding is not None and observation.binding != context.binding:
@@ -403,18 +406,23 @@ def assess_attempt_correlation(
             reasons.add("observation_for_different_request")
         else:
             reasons.update(outcome.reasons)
+            if observation.binding == context.binding and observation.checkout_request_id is None:
+                bound_unidentified.append(observation)
 
+    # Consistency is checked over correlated and correctly bound observations; only
+    # identifier-correlated observations establish correlation or count as sources.
+    consistency = [*correlated, *bound_unidentified]
     settlement_ids = frozenset(
         o.settlement_id
-        for o in correlated
+        for o in consistency
         if o.source == CALLBACK_SOURCE and o.settlement_id is not None
     )
     if len(settlement_ids) > 1:
         reasons.add("conflicting_settlement_identifiers")
-    callback_codes = {o.result_code for o in correlated if o.source == CALLBACK_SOURCE}
+    callback_codes = {o.result_code for o in consistency if o.source == CALLBACK_SOURCE}
     if len(callback_codes) > 1:
         reasons.add("conflicting_callback_result_codes")
-    initiation_codes = {o.result_code for o in correlated if o.source == INITIATION_SOURCE}
+    initiation_codes = {o.result_code for o in consistency if o.source == INITIATION_SOURCE}
     if len(initiation_codes) > 1:
         reasons.add("conflicting_initiation_result_codes")
     if initiation_codes and INITIATION_ACCEPTED_CODE not in initiation_codes and callback_codes:
