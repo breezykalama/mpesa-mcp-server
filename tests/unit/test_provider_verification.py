@@ -8,11 +8,13 @@ from __future__ import annotations
 import ast
 import dataclasses
 import itertools
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 from app.main import app
+from app.payments.execution_evidence import ExecutionAttemptRecord, ExecutionEvidenceRecord
 from app.payments.provider_verification import (
     SOURCE_CAPABILITIES,
     AttemptBinding,
@@ -23,6 +25,7 @@ from app.payments.provider_verification import (
     ProviderObservation,
     assess_attempt_correlation,
     correlate_observation,
+    observation_from_evidence,
 )
 from app.policy.tool_policy import AGENT_FORBIDDEN_TOOLS, CURRENT_MCP_TOOLS
 
@@ -728,6 +731,119 @@ def test_identity_mismatch_with_several_candidates_is_unchanged() -> None:
     assert correlate_observation(_callback(), contexts).status == "ambiguous"
     mismatched = _callback(identity=ProviderIdentity(provider="other"))
     assert correlate_observation(mismatched, contexts).reasons == ("provider_or_rail_mismatch",)
+
+
+RECORDED_AT = datetime(2026, 11, 26, tzinfo=UTC)
+ATTEMPT_RECORD = ExecutionAttemptRecord(
+    attempt_id=BINDING.attempt_id,
+    claim_id=BINDING.claim_id,
+    approval_id=BINDING.approval_id,
+    payload_hash=BINDING.payload_hash,
+    provider="daraja",
+    rail="mpesa",
+    idempotency_key=None,
+    recorded_by="worker-1",
+    correlation_id=None,
+    recorded_at=RECORDED_AT,
+)
+
+
+def _initiation_record(
+    sequence: int, *, checkout: str | None, merchant: str | None, code: str = "0"
+) -> ExecutionEvidenceRecord:
+    return ExecutionEvidenceRecord(
+        evidence_id=f"evidence-{sequence}",
+        attempt_id=BINDING.attempt_id,
+        claim_id=BINDING.claim_id,
+        approval_id=BINDING.approval_id,
+        payload_hash=BINDING.payload_hash,
+        sequence=sequence,
+        evidence_type="provider_response_observed",
+        evidence_source="provider_initiation_response",
+        verification_level="unverified",
+        observation_key=f"provider_initiation_response:initiation-{sequence}",
+        uncertainty_reason=None,
+        result_code=code,
+        result_description=None,
+        checkout_request_id=checkout,
+        merchant_request_id=merchant,
+        provider_transaction_id=checkout,
+        recorded_at=RECORDED_AT,
+    )
+
+
+def _from_records(*records: ExecutionEvidenceRecord) -> tuple[Any, list[ProviderObservation]]:
+    context = AttemptCorrelationContext.from_records(ATTEMPT_RECORD, records)
+    observations = [observation_from_evidence(r, identity=DARAJA_MPESA) for r in records]
+    return context, observations
+
+
+def _every_order(
+    context: AttemptCorrelationContext, observations: list[ProviderObservation]
+) -> AttemptCorrelationAssessment:
+    results = {
+        assess_attempt_correlation(context, list(order))
+        for order in itertools.permutations(observations)
+    }
+    assert len(results) == 1
+    return next(iter(results))
+
+
+@pytest.mark.parametrize("checkout", [None, ""], ids=["none", "empty"])
+def test_conflicting_merchant_ids_without_checkout_conflict(checkout: str | None) -> None:
+    context, observations = _from_records(
+        _initiation_record(1, checkout=checkout, merchant="mr-a"),
+        _initiation_record(2, checkout=checkout, merchant="mr-b"),
+    )
+
+    assert context.identifiers_conflict is True
+    result = _every_order(context, observations)
+    assert result.status == "conflicting"
+    assert "attempt_initiation_identifiers_conflict" in result.reasons
+    assert result.sources == frozenset()
+    _assert_never_an_outcome(result)
+    single = correlate_observation(observations[0], [context])
+    assert single.status == "conflicting"
+    assert single.reasons == ("attempt_initiation_identifiers_conflict",)
+
+
+def test_conflicting_checkout_ids_conflict_with_or_without_correlation() -> None:
+    context, observations = _from_records(
+        _initiation_record(1, checkout="ws_CO_a", merchant=MERCHANT),
+        _initiation_record(2, checkout="ws_CO_b", merchant=MERCHANT),
+    )
+    callback = _callback(binding=BINDING, checkout_request_id="ws_CO_a")
+
+    for observed in (observations, [*observations, callback], []):
+        result = _every_order(context, observed)
+        assert result.status == "conflicting", observed
+        assert "attempt_initiation_identifiers_conflict" in result.reasons
+        _assert_never_an_outcome(result)
+
+
+def test_context_conflict_with_only_uncorrelated_observations() -> None:
+    context = _context(merchant=frozenset({MERCHANT, "mr-other"}))
+    unidentified = _callback(binding=BINDING, checkout_request_id=None)
+    unbound = _callback(checkout_request_id=None)
+
+    result = _every_order(context, [unidentified, unbound])
+
+    assert result.status == "conflicting"
+    assert "attempt_initiation_identifiers_conflict" in result.reasons
+    assert result.sources == frozenset()
+
+
+def test_consistent_initiation_without_checkout_stays_unresolved() -> None:
+    context, observations = _from_records(
+        _initiation_record(1, checkout=None, merchant=MERCHANT),
+        _initiation_record(2, checkout=None, merchant=MERCHANT, code="0"),
+    )
+
+    assert context.identifiers_conflict is False
+    result = _every_order(context, observations)
+    assert result.status == "unresolved"
+    assert "attempt_initiation_identifiers_conflict" not in result.reasons
+    assert result.sources == frozenset()
 
 
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:

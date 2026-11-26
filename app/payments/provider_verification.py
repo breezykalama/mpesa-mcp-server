@@ -329,6 +329,12 @@ def correlate_observation(
     # even when the CheckoutRequestID is missing.
     if len(candidates) == 1 and observation.identity != candidates[0].identity:
         return result("uncorrelated", "provider_or_rail_mismatch")
+    # Context next: a single known attempt whose own initiation identifiers conflict
+    # cannot be correlated to, whatever identifiers the observation carries.
+    if len(candidates) == 1 and candidates[0].identifiers_conflict:
+        return result(
+            "conflicting", "attempt_initiation_identifiers_conflict", attempt=candidates[0].binding
+        )
 
     checkout = observation.checkout_request_id
     if checkout is None:
@@ -391,6 +397,9 @@ def assess_attempt_correlation(
     distinct = sorted(unique.values(), key=lambda o: repr(o.identity_key))
 
     reasons: set[str] = set()
+    # Context-level conflicts come first and never depend on observation correlation.
+    if context.identifiers_conflict:
+        reasons.add("attempt_initiation_identifiers_conflict")
     correlated: list[ProviderObservation] = []
     # Correctly bound observations that did not correlate by identifier cannot establish
     # correlation, but they take part in every consistency check so they cannot hide a
