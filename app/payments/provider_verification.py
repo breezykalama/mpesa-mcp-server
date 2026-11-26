@@ -325,6 +325,10 @@ def correlate_observation(
         and observation.binding != candidates[0].binding
     ):
         return result("conflicting", "binding_mismatch", attempt=candidates[0].binding)
+    # Identity next: with a single known candidate, a provider/rail mismatch is reported
+    # even when the CheckoutRequestID is missing.
+    if len(candidates) == 1 and observation.identity != candidates[0].identity:
+        return result("uncorrelated", "provider_or_rail_mismatch")
 
     checkout = observation.checkout_request_id
     if checkout is None:
@@ -419,7 +423,9 @@ def assess_attempt_correlation(
     settlement_ids = frozenset(
         o.settlement_id
         for o in consistency
-        if o.source == CALLBACK_SOURCE and o.settlement_id is not None
+        if o.source == CALLBACK_SOURCE
+        and o.settlement_id is not None
+        and o.identity == context.identity
     )
 
     status: AttemptCorrelationStatus
@@ -461,7 +467,14 @@ def _consistency_reasons(
     """
 
     reasons: set[str] = set()
+    comparable: list[ProviderObservation] = []
     for observation in observations:
+        if observation.identity != context.identity:
+            # Another provider or rail: report it, and keep its codes and receipts out
+            # of this attempt's comparisons.
+            reasons.add("provider_or_rail_mismatch")
+            continue
+        comparable.append(observation)
         merchant = observation.merchant_request_id
         if (
             merchant is not None
@@ -482,18 +495,29 @@ def _consistency_reasons(
 
     receipts = {
         o.settlement_id
-        for o in observations
+        for o in comparable
         if o.source == CALLBACK_SOURCE and o.settlement_id is not None
     }
     if len(receipts) > 1:
         reasons.add("conflicting_settlement_identifiers")
-    callback_codes = {o.result_code for o in observations if o.source == CALLBACK_SOURCE}
+    # Absent result codes (None; "" is normalized to None) are never compared and never
+    # read as acceptance, failure or rejection.
+    callback_codes = {
+        o.result_code
+        for o in comparable
+        if o.source == CALLBACK_SOURCE and o.result_code is not None
+    }
     if len(callback_codes) > 1:
         reasons.add("conflicting_callback_result_codes")
-    initiation_codes = {o.result_code for o in observations if o.source == INITIATION_SOURCE}
+    initiation_codes = {
+        o.result_code
+        for o in comparable
+        if o.source == INITIATION_SOURCE and o.result_code is not None
+    }
     if len(initiation_codes) > 1:
         reasons.add("conflicting_initiation_result_codes")
-    if initiation_codes and INITIATION_ACCEPTED_CODE not in initiation_codes and callback_codes:
+    explicitly_rejected = any(code != INITIATION_ACCEPTED_CODE for code in initiation_codes)
+    if explicitly_rejected and any(o.source == CALLBACK_SOURCE for o in comparable):
         reasons.add("callback_after_rejected_initiation")
     return reasons
 

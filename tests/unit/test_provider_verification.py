@@ -619,6 +619,117 @@ def test_comprehensive_consistency_is_independent_of_arrival_order() -> None:
     _assert_never_an_outcome(result)
 
 
+def _both_orders(*observations: ProviderObservation) -> AttemptCorrelationAssessment:
+    results = {
+        assess_attempt_correlation(_context(), list(order))
+        for order in itertools.permutations(observations)
+    }
+    assert len(results) == 1
+    return next(iter(results))
+
+
+@pytest.mark.parametrize("code", [None, ""], ids=["none", "empty"])
+def test_absent_initiation_code_is_not_a_rejection(code: str | None) -> None:
+    result = _both_orders(
+        _initiation(binding=BINDING, result_code=code), _callback(binding=BINDING)
+    )
+
+    assert result.status == "correlated"
+    assert result.reasons == ()
+    _assert_never_an_outcome(result)
+
+
+@pytest.mark.parametrize("code", [None, ""], ids=["none", "empty"])
+def test_absent_code_does_not_conflict_with_an_explicit_code(code: str | None) -> None:
+    initiation = _both_orders(
+        _initiation(binding=BINDING, result_code="0"),
+        _initiation(binding=BINDING, result_code=code, settlement_id=None),
+    )
+    callback = _both_orders(
+        _callback(binding=BINDING, result_code="0"),
+        _callback(binding=BINDING, result_code=code),
+    )
+
+    assert initiation.status == "correlated"
+    assert callback.status == "correlated"
+
+
+def test_absent_code_beside_a_real_rejection_still_reports_the_rejection() -> None:
+    result = _both_orders(
+        _initiation(binding=BINDING, result_code="1"),
+        _initiation(binding=BINDING, result_code=None, settlement_id=None),
+        _callback(binding=BINDING),
+    )
+
+    assert result.status == "conflicting"
+    assert "callback_after_rejected_initiation" in result.reasons
+    assert "conflicting_initiation_result_codes" not in result.reasons
+
+
+def test_distinct_explicit_codes_still_conflict() -> None:
+    initiation = _both_orders(
+        _initiation(binding=BINDING, result_code="0"),
+        _initiation(binding=BINDING, result_code="1", settlement_id=None),
+    )
+    callback = _both_orders(
+        _callback(binding=BINDING, result_code="0"),
+        _callback(binding=BINDING, result_code="1032", settlement_id=None),
+    )
+
+    assert "conflicting_initiation_result_codes" in initiation.reasons
+    assert "conflicting_callback_result_codes" in callback.reasons
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [ProviderIdentity(provider="other"), ProviderIdentity(rail="card")],
+    ids=["provider", "rail"],
+)
+def test_bound_identity_mismatch_without_checkout_id_conflicts(identity: ProviderIdentity) -> None:
+    mismatched = _callback(binding=BINDING, checkout_request_id=None, identity=identity)
+
+    single = correlate_observation(mismatched, [_context()])
+    result = _both_orders(_callback(binding=BINDING), mismatched)
+
+    assert single.reasons == ("provider_or_rail_mismatch",)
+    assert single.status != "correlated"
+    assert result.status == "conflicting"
+    assert "provider_or_rail_mismatch" in result.reasons
+    assert result.sources == frozenset({"provider_callback"})
+
+
+def test_identity_mismatch_without_checkout_id_contributes_no_result_codes() -> None:
+    mismatched = _callback(
+        binding=BINDING,
+        checkout_request_id=None,
+        identity=ProviderIdentity(provider="other"),
+        result_code="1032",
+        settlement_id="OTHERRCPT",
+    )
+
+    result = _both_orders(_callback(binding=BINDING), mismatched)
+
+    assert result.reasons == ("provider_or_rail_mismatch",)
+    assert result.settlement_ids == frozenset({RECEIPT})
+
+
+def test_matching_identity_without_checkout_id_stays_unresolved() -> None:
+    observation = _callback(binding=BINDING, checkout_request_id=None, identity=DARAJA_MPESA)
+
+    result = assess_attempt_correlation(_context(), [observation])
+
+    assert result.status == "unresolved"
+    assert result.reasons == ("missing_checkout_request_id",)
+
+
+def test_identity_mismatch_with_several_candidates_is_unchanged() -> None:
+    contexts = [_context(), _context(OTHER_BINDING)]
+
+    assert correlate_observation(_callback(), contexts).status == "ambiguous"
+    mismatched = _callback(identity=ProviderIdentity(provider="other"))
+    assert correlate_observation(mismatched, contexts).reasons == ("provider_or_rail_mismatch",)
+
+
 def test_repeated_callbacks_are_not_independent_corroboration() -> None:
     assessment = assess_attempt_correlation(_context(), [_callback(), _callback()])
 
